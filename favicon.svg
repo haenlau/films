@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#151a24" />
+      <stop offset="1" stop-color="#05070b" />
+    </linearGradient>
+    <linearGradient id="accent" x1="18" y1="14" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd39f" />
+      <stop offset="0.55" stop-color="#ff8f2f" />
+      <stop offset="1" stop-color="#ff5e00" />
+    </linearGradient>
+    <linearGradient id="glow" x1="10" y1="8" x2="40" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffb56c" stop-opacity="0.8" />
+      <stop offset="1" stop-color="#ffb56c" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="18" fill="url(#bg)" />
+  <rect x="4" y="4" width="56" height="56" rx="18" fill="url(#glow)" />
+  <rect x="16" y="15" width="8" height="34" rx="4" fill="url(#accent)" />
+  <rect x="28" y="15" width="20" height="8" rx="4" fill="url(#accent)" />
+  <rect x="28" y="28" width="20" height="8" rx="4" fill="url(#accent)" />
+  <rect x="28" y="41" width="14" height="8" rx="4" fill="url(#accent)" />
+  <circle cx="50" cy="44" r="3" fill="#ffd39f" opacity="0.92" />
+</svg>
