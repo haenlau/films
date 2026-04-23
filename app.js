@@ -253,13 +253,7 @@ function updateAdminUi() {
   elements.adminLoginButton.hidden = !(canAttemptLocalLogin || (canAttemptRemoteLogin && !state.admin.remoteAuthenticated));
   elements.adminLogoutButton.hidden = !canManage;
 
-  if (isLocalAdmin) {
-    elements.userMenuButton.textContent = "控制台 · 本地已登录";
-  } else if (isRemoteAdmin) {
-    elements.userMenuButton.textContent = "控制台 · 已登录";
-  } else {
-    elements.userMenuButton.textContent = "控制台";
-  }
+  elements.userMenuButton.textContent = "控制台";
 
   if (isLocalAdmin) {
     elements.adminLogoutButton.textContent = "退出登录";
