@@ -3,6 +3,7 @@ import { dedupeEntries, readSourceLibrary, writeResolvedLibrary, writeSourceLibr
 
 const source = await readSourceLibrary();
 const entries = dedupeEntries(source.entries);
+const resolvedEntries = [];
 const movies = [];
 
 for (const [index, entry] of entries.entries()) {
@@ -16,6 +17,12 @@ for (const [index, entry] of entries.entries()) {
   }
 
   const detail = await getMovieDetails(match.id);
+  resolvedEntries.push({
+    ...entry,
+    title: detail.title,
+    year: Number(detail.release_date?.slice(0, 4)) || entry.year,
+    tmdbId: detail.id,
+  });
   movies.push(transformMovie(detail, index));
   console.log(`已解析 ${index + 1}/${entries.length}: ${detail.title} (${detail.release_date?.slice(0, 4) || "未知"})`);
 }
@@ -23,7 +30,7 @@ for (const [index, entry] of entries.entries()) {
 await writeSourceLibrary({
   title: source.title,
   subtitle: source.subtitle,
-  entries,
+  entries: resolvedEntries,
 });
 
 await writeResolvedLibrary({

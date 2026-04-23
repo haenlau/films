@@ -90,19 +90,20 @@ img {
   transform: translate(44%, 6%);
 }
 
-.topbar,
-.layout {
-  position: relative;
-  z-index: 1;
-}
-
 .topbar {
+  position: relative;
+  z-index: 30;
   display: flex;
   justify-content: space-between;
   gap: 24px;
   align-items: flex-start;
   margin: 0 auto 24px;
   max-width: 1520px;
+}
+
+.layout {
+  position: relative;
+  z-index: 1;
 }
 
 .brand-mark,
@@ -189,7 +190,7 @@ img {
   pointer-events: none;
   transform: translateY(-8px);
   transition: opacity 180ms ease, transform 180ms ease;
-  z-index: 20;
+  z-index: 60;
 }
 
 .user-menu.open {
