@@ -111,8 +111,6 @@ function bindEvents() {
     event.stopPropagation();
     setUserMenuOpen(!state.admin.menuOpen);
   });
-  elements.userHub?.addEventListener("mouseenter", () => setUserMenuOpen(true));
-  elements.userHub?.addEventListener("mouseleave", () => setUserMenuOpen(false));
 
   elements.openSearch?.addEventListener("click", () => {
     syncSearchModalCopy();
@@ -238,19 +236,28 @@ async function initializeRemoteAdmin() {
 function updateAdminUi() {
   const isLocalAdmin = state.admin.mode === "local";
   const isRemoteAdmin = state.admin.mode === "remote" && state.admin.remoteAuthenticated;
+  const canAttemptRemoteLogin = !isLocalAdmin && /^https?:$/.test(window.location.protocol);
   const canManage = isLocalAdmin || isRemoteAdmin;
 
   elements.openSearch.hidden = !canManage;
   elements.exportSource.hidden = !isLocalAdmin;
   elements.exportResolved.hidden = !isLocalAdmin;
-  elements.adminLoginButton.hidden = !(state.admin.remoteAvailable && !state.admin.remoteAuthenticated);
+  elements.adminLoginButton.hidden = !(canAttemptRemoteLogin && !state.admin.remoteAuthenticated);
   elements.adminLogoutButton.hidden = !isRemoteAdmin;
+
+  if (isLocalAdmin) {
+    elements.userMenuButton.textContent = "馆藏台 · 本地管理";
+  } else if (isRemoteAdmin) {
+    elements.userMenuButton.textContent = "馆藏台 · 已登录";
+  } else {
+    elements.userMenuButton.textContent = "馆藏台";
+  }
 
   if (isLocalAdmin) {
     elements.statusCopy.textContent = "本地管理员模式已启用。你可以搜索添加电影，也可以导出新的片库文件。";
   } else if (isRemoteAdmin) {
     elements.statusCopy.textContent = "你已进入管理员模式。现在可以搜索添加电影，或在搜索结果里删除已存在的电影，变更会直接写入 Cloudflare KV。";
-  } else if (state.admin.remoteAvailable) {
+  } else if (canAttemptRemoteLogin) {
     elements.statusCopy.textContent = "公开访客只能浏览和搜索已添加电影。登录后，才可以搜索添加或删除片库内容。";
   } else {
     elements.statusCopy.textContent = "当前是本地只读预览模式。公开搜索始终可用；若要页面内维护，请使用本地管理员模式或部署 Cloudflare 后登录。";

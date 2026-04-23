@@ -154,6 +154,9 @@ img {
 .user-trigger {
   min-width: 146px;
   justify-content: space-between;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
 }
 
 .user-trigger::after {
@@ -189,10 +192,12 @@ img {
   color: var(--text);
   background: transparent;
   text-align: left;
+  border: 1px solid transparent;
 }
 
 .user-menu-item:hover {
   background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 .user-menu-note {
