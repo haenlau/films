@@ -31,18 +31,15 @@
         </p>
       </div>
 
-      <div class="topbar-actions" id="adminActions" hidden>
-        <button class="ghost-button" id="openSearch">搜索添加</button>
-        <button class="ghost-button" id="exportSource">导出片单</button>
-        <button class="primary-button" id="exportResolved">导出完整数据</button>
-      </div>
-
-      <div class="topbar-status" id="topbarStatus">
-        <div class="status-pill">PRIVATE ARCHIVE</div>
-        <p class="status-copy" id="statusCopy">站点为只读展厅。更新片单时，修改 `data/library.json` 后重新部署即可。</p>
-        <div class="status-actions">
-          <button class="ghost-button compact-button" id="adminLoginButton" hidden>管理员登录</button>
-          <button class="ghost-button compact-button" id="adminLogoutButton" hidden>退出管理</button>
+      <div class="user-hub" id="userHub">
+        <button class="ghost-button user-trigger" id="userMenuButton" aria-expanded="false">用户中心</button>
+        <div class="user-menu panel" id="userMenu" aria-hidden="true">
+          <button class="user-menu-item" id="openSearch" hidden>搜索添加电影</button>
+          <button class="user-menu-item" id="exportSource" hidden>导出片单</button>
+          <button class="user-menu-item" id="exportResolved" hidden>导出完整数据</button>
+          <button class="user-menu-item" id="adminLoginButton" hidden>管理员登录</button>
+          <button class="user-menu-item danger-text" id="adminLogoutButton" hidden>退出登录</button>
+          <p class="user-menu-note" id="statusCopy">站点为只读展厅。未登录用户只能浏览与搜索你已添加的电影。</p>
         </div>
       </div>
     </header>

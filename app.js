@@ -3,7 +3,7 @@ const SOURCE_LIBRARY_URL = "./data/library.json";
 const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/";
 const MOVIE_DB_BASE_URL = "https://api.themoviedb.org/3";
 const BROWSER_REQUEST_INTERVAL_MS = 120;
-const STORAGE_KEY = "film-vault.local-draft.v2";
+const STORAGE_KEY = "film-vault.local-draft.v3";
 
 let lastBrowserRequestAt = 0;
 
@@ -20,12 +20,14 @@ const state = {
   },
   activeGenre: "all",
   featuredMovieId: null,
+  searchResults: [],
   admin: {
     mode: "none",
     apiKey: "",
     remoteAvailable: false,
     remoteAuthenticated: false,
     remoteSeeded: false,
+    menuOpen: false,
   },
 };
 
@@ -33,9 +35,14 @@ const elements = {
   pageTitle: document.getElementById("pageTitle"),
   pageSubtitle: document.getElementById("pageSubtitle"),
   statusCopy: document.getElementById("statusCopy"),
-  adminActions: document.getElementById("adminActions"),
+  userHub: document.getElementById("userHub"),
+  userMenu: document.getElementById("userMenu"),
+  userMenuButton: document.getElementById("userMenuButton"),
   adminLoginButton: document.getElementById("adminLoginButton"),
   adminLogoutButton: document.getElementById("adminLogoutButton"),
+  openSearch: document.getElementById("openSearch"),
+  exportSource: document.getElementById("exportSource"),
+  exportResolved: document.getElementById("exportResolved"),
   movieWall: document.getElementById("movieWall"),
   resultsMeta: document.getElementById("resultsMeta"),
   statCount: document.getElementById("statCount"),
@@ -59,9 +66,6 @@ const elements = {
   closeDetail: document.getElementById("closeDetail"),
   searchModal: document.getElementById("searchModal"),
   closeSearchModal: document.getElementById("closeSearchModal"),
-  openSearch: document.getElementById("openSearch"),
-  exportSource: document.getElementById("exportSource"),
-  exportResolved: document.getElementById("exportResolved"),
   tmdbSearchForm: document.getElementById("tmdbSearchForm"),
   tmdbSearchInput: document.getElementById("tmdbSearchInput"),
   searchResults: document.getElementById("searchResults"),
@@ -83,9 +87,7 @@ async function init() {
 
 function configureLocalAdminMode() {
   const config = window.FILM_VAULT_ADMIN || {};
-  const isLocalFile = window.location.protocol === "file:";
-
-  if (isLocalFile && config.apiKey) {
+  if (window.location.protocol === "file:" && config.apiKey) {
     state.admin.mode = "local";
     state.admin.apiKey = String(config.apiKey).trim();
   }
@@ -101,21 +103,39 @@ function bindEvents() {
     elements.ratingRangeValue.textContent = `${Number(elements.ratingRange.value).toFixed(1)}+`;
     renderLibrary();
   });
+
   elements.heroShuffleButton.addEventListener("click", shuffleFeaturedMovie);
   elements.closeDetail.addEventListener("click", closeDetailDrawer);
 
+  elements.userMenuButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setUserMenuOpen(!state.admin.menuOpen);
+  });
+  elements.userHub?.addEventListener("mouseenter", () => setUserMenuOpen(true));
+  elements.userHub?.addEventListener("mouseleave", () => setUserMenuOpen(false));
+
   elements.openSearch?.addEventListener("click", () => {
     syncSearchModalCopy();
+    setUserMenuOpen(false);
     openModal(elements.searchModal);
   });
-  elements.closeSearchModal?.addEventListener("click", () => closeModal(elements.searchModal));
-  elements.exportSource?.addEventListener("click", exportSourceLibrary);
-  elements.exportResolved?.addEventListener("click", exportResolvedLibrary);
-  elements.tmdbSearchForm?.addEventListener("submit", handleSearchSubmit);
-
-  elements.adminLoginButton?.addEventListener("click", () => openModal(elements.loginModal));
+  elements.exportSource?.addEventListener("click", () => {
+    exportSourceLibrary();
+    setUserMenuOpen(false);
+  });
+  elements.exportResolved?.addEventListener("click", () => {
+    exportResolvedLibrary();
+    setUserMenuOpen(false);
+  });
+  elements.adminLoginButton?.addEventListener("click", () => {
+    setUserMenuOpen(false);
+    openModal(elements.loginModal);
+  });
   elements.adminLogoutButton?.addEventListener("click", handleRemoteLogout);
+
+  elements.closeSearchModal?.addEventListener("click", () => closeModal(elements.searchModal));
   elements.closeLoginModal?.addEventListener("click", () => closeModal(elements.loginModal));
+  elements.tmdbSearchForm?.addEventListener("submit", handleSearchSubmit);
   elements.adminLoginForm?.addEventListener("submit", handleRemoteLogin);
 
   [elements.searchModal, elements.loginModal].forEach((modal) => {
@@ -126,8 +146,15 @@ function bindEvents() {
     });
   });
 
+  document.addEventListener("click", (event) => {
+    if (!elements.userHub?.contains(event.target)) {
+      setUserMenuOpen(false);
+    }
+  });
+
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      setUserMenuOpen(false);
       closeDetailDrawer();
       closeModal(elements.searchModal);
       closeModal(elements.loginModal);
@@ -183,9 +210,7 @@ async function initializeRemoteAdmin() {
     const response = await fetch("/api/admin/session", {
       method: "GET",
       credentials: "include",
-      headers: {
-        "Cache-Control": "no-store",
-      },
+      headers: { "Cache-Control": "no-store" },
     });
 
     if (!response.ok) {
@@ -215,26 +240,28 @@ function updateAdminUi() {
   const isRemoteAdmin = state.admin.mode === "remote" && state.admin.remoteAuthenticated;
   const canManage = isLocalAdmin || isRemoteAdmin;
 
-  elements.adminActions.hidden = !canManage;
+  elements.openSearch.hidden = !canManage;
+  elements.exportSource.hidden = !isLocalAdmin;
+  elements.exportResolved.hidden = !isLocalAdmin;
   elements.adminLoginButton.hidden = !(state.admin.remoteAvailable && !state.admin.remoteAuthenticated);
-  elements.adminLogoutButton.hidden = !(state.admin.remoteAvailable && state.admin.remoteAuthenticated);
+  elements.adminLogoutButton.hidden = !isRemoteAdmin;
 
   if (isLocalAdmin) {
-    elements.statusCopy.textContent = "当前是本地维护模式。你可以直接搜索添加电影，结果会保存在浏览器本地草稿，并可导出新的片库文件。";
-    return;
+    elements.statusCopy.textContent = "本地管理员模式已启用。你可以搜索添加电影，也可以导出新的片库文件。";
+  } else if (isRemoteAdmin) {
+    elements.statusCopy.textContent = "你已进入管理员模式。现在可以搜索添加电影，或在搜索结果里删除已存在的电影，变更会直接写入 Cloudflare KV。";
+  } else if (state.admin.remoteAvailable) {
+    elements.statusCopy.textContent = "公开访客只能浏览和搜索已添加电影。登录后，才可以搜索添加或删除片库内容。";
+  } else {
+    elements.statusCopy.textContent = "当前是本地只读预览模式。公开搜索始终可用；若要页面内维护，请使用本地管理员模式或部署 Cloudflare 后登录。";
   }
+}
 
-  if (isRemoteAdmin) {
-    elements.statusCopy.textContent = "当前已通过管理员鉴权。你现在可以在页面内搜索添加电影，数据会保存到 Cloudflare KV。";
-    return;
-  }
-
-  if (state.admin.remoteAvailable) {
-    elements.statusCopy.textContent = "当前是公开只读模式。点击“管理员登录”后，才可以搜索并添加你看过的电影。";
-    return;
-  }
-
-  elements.statusCopy.textContent = "当前是只读预览模式。若要本地页面内维护，请双击打开 index.html 并保留未提交的 admin.local.js；若要部署到 Cloudflare，请配置管理员鉴权接口。";
+function setUserMenuOpen(open) {
+  state.admin.menuOpen = open;
+  elements.userMenu?.classList.toggle("open", open);
+  elements.userMenu?.setAttribute("aria-hidden", String(!open));
+  elements.userMenuButton?.setAttribute("aria-expanded", String(open));
 }
 
 async function loadResolvedLibrary() {
@@ -341,38 +368,37 @@ function renderLibrary() {
     return;
   }
 
-  elements.movieWall.innerHTML = filteredMovies
-    .map((movie) => {
-      const poster = movie.poster_path
-        ? `<img src="${getImageUrl(movie.poster_path, "w500")}" alt="${escapeHtml(movie.title)} 海报" loading="lazy" />`
-        : `<div class="movie-fallback">${escapeHtml(movie.title)}</div>`;
-
-      const genres = (movie.genres || []).slice(0, 2).map((genre) => genre.name).join(" / ") || "未分类";
-      const countries = (movie.production_countries || [])
-        .slice(0, 2)
-        .map((country) => country.name)
-        .join(" / ") || "地区待补充";
-
-      return `
-        <article class="movie-card" data-open-detail="${movie.id}">
-          ${poster}
-          <div class="movie-content">
-            <div class="movie-topline">
-              <span class="movie-score">评分 ${formatScore(movie.vote_average)}</span>
-              <span class="movie-year">${formatYear(movie.release_date)}</span>
-            </div>
-            <h4 class="movie-title">${escapeHtml(movie.title)}</h4>
-            <p class="movie-subtitle">${escapeHtml(truncate(movie.overview || "暂无简介。", 72))}</p>
-            <p class="movie-meta">${escapeHtml(genres)} · ${escapeHtml(countries)}</p>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
-
+  elements.movieWall.innerHTML = filteredMovies.map(renderMovieCard).join("");
   elements.movieWall.querySelectorAll("[data-open-detail]").forEach((card) => {
     card.addEventListener("click", () => openDetail(Number(card.dataset.openDetail)));
   });
+}
+
+function renderMovieCard(movie) {
+  const poster = movie.poster_path
+    ? `<img src="${getImageUrl(movie.poster_path, "w500")}" alt="${escapeHtml(movie.title)} 海报" loading="lazy" />`
+    : `<div class="movie-fallback">${escapeHtml(movie.title)}</div>`;
+
+  const genres = (movie.genres || []).slice(0, 2).map((genre) => genre.name).join(" / ") || "未分类";
+  const countries = (movie.production_countries || [])
+    .slice(0, 2)
+    .map((country) => country.name)
+    .join(" / ") || "地区待补充";
+
+  return `
+    <article class="movie-card" data-open-detail="${movie.id}">
+      ${poster}
+      <div class="movie-content">
+        <div class="movie-topline">
+          <span class="movie-score">评分 ${formatScore(movie.vote_average)}</span>
+          <span class="movie-year">${formatYear(movie.release_date)}</span>
+        </div>
+        <h4 class="movie-title">${escapeHtml(movie.title)}</h4>
+        <p class="movie-subtitle">${escapeHtml(truncate(movie.overview || "暂无简介。", 72))}</p>
+        <p class="movie-meta">${escapeHtml(genres)} · ${escapeHtml(countries)}</p>
+      </div>
+    </article>
+  `;
 }
 
 function getFilteredMovies() {
@@ -410,15 +436,12 @@ function getFilteredMovies() {
     if (sortBy === "release") {
       return new Date(b.release_date || "1900-01-01") - new Date(a.release_date || "1900-01-01");
     }
-
     if (sortBy === "title") {
       return (a.title || "").localeCompare(b.title || "", "zh-Hans-CN");
     }
-
     if (sortBy === "added") {
       return Number(a.order || 0) - Number(b.order || 0);
     }
-
     return Number(b.vote_average || 0) - Number(a.vote_average || 0);
   });
 }
@@ -440,9 +463,7 @@ function updateStats() {
   const regions = new Set();
 
   state.library.movies.forEach((movie) => {
-    (movie.production_countries || []).forEach((country) => {
-      regions.add(country.iso_3166_1);
-    });
+    (movie.production_countries || []).forEach((country) => regions.add(country.iso_3166_1));
   });
 
   elements.statCount.textContent = String(total);
@@ -454,13 +475,10 @@ function updateStats() {
 function renderGenreChips() {
   const genreMap = new Map();
   state.library.movies.forEach((movie) => {
-    (movie.genres || []).forEach((genre) => {
-      genreMap.set(genre.id, genre.name);
-    });
+    (movie.genres || []).forEach((genre) => genreMap.set(genre.id, genre.name));
   });
 
   const chips = [{ id: "all", name: "全部类型" }, ...Array.from(genreMap, ([id, name]) => ({ id, name }))];
-
   elements.genreChips.innerHTML = chips
     .map(
       (genre) => `
@@ -518,7 +536,7 @@ function updateResultsMeta(filteredMovies) {
 }
 
 function updateFeaturedMovie(preferredId) {
-  const source = state.library.movies.length ? state.library.movies : [];
+  const source = state.library.movies;
   if (!source.length) {
     return;
   }
@@ -533,10 +551,7 @@ function updateFeaturedMovie(preferredId) {
 
   state.featuredMovieId = featured.id;
   const backdrop = featured.backdrop_path
-    ? `linear-gradient(90deg, rgba(5, 7, 11, 0.92), rgba(5, 7, 11, 0.55) 42%, rgba(5, 7, 11, 0.82) 100%), url(${getImageUrl(
-        featured.backdrop_path,
-        "w1280"
-      )})`
+    ? `linear-gradient(90deg, rgba(5, 7, 11, 0.92), rgba(5, 7, 11, 0.55) 42%, rgba(5, 7, 11, 0.82) 100%), url(${getImageUrl(featured.backdrop_path, "w1280")})`
     : "linear-gradient(135deg, rgba(255, 122, 24, 0.14), rgba(212, 57, 62, 0.16), rgba(10, 14, 20, 0.92))";
 
   const countries = (featured.production_countries || []).map((country) => country.name).slice(0, 2);
@@ -597,7 +612,6 @@ async function openDetail(movieId) {
   const detailHeroBackground = detail.backdrop_path || detail.poster_path
     ? `url('${getImageUrl(detail.backdrop_path || detail.poster_path, "w1280")}')`
     : "linear-gradient(135deg, rgba(255, 122, 24, 0.18), rgba(212, 57, 62, 0.2), rgba(10, 14, 20, 0.96))";
-
   const localRemoveAction = state.admin.mode === "local"
     ? `<button class="movie-action danger-button" data-remove-movie="${detail.id}">从本地草稿移除</button>`
     : "";
@@ -610,7 +624,6 @@ async function openDetail(movieId) {
         <p class="detail-overview">${escapeHtml(detail.overview || "暂无简介。")}</p>
       </div>
     </section>
-
     <div class="detail-grid">
       <section class="detail-block">
         <h4>基础信息</h4>
@@ -623,7 +636,6 @@ async function openDetail(movieId) {
           <div class="detail-row"><span>原始片名</span><strong>${escapeHtml(detail.original_title || detail.title)}</strong></div>
         </div>
       </section>
-
       <section class="detail-block">
         <h4>制作信息</h4>
         <div class="detail-list">
@@ -633,27 +645,21 @@ async function openDetail(movieId) {
           <div class="detail-row"><span>热度</span><strong>${Number(detail.popularity || 0).toFixed(1)}</strong></div>
         </div>
       </section>
-
       <section class="detail-block">
         <h4>主要演员</h4>
         <div class="cast-grid">
           ${
             cast.length
-              ? cast
-                  .map(
-                    (person) => `
-                      <article class="cast-card">
-                        <strong>${escapeHtml(person.name)}</strong>
-                        <span>${escapeHtml(person.character || "角色待补充")}</span>
-                      </article>
-                    `
-                  )
-                  .join("")
+              ? cast.map((person) => `
+                  <article class="cast-card">
+                    <strong>${escapeHtml(person.name)}</strong>
+                    <span>${escapeHtml(person.character || "角色待补充")}</span>
+                  </article>
+                `).join("")
               : `<div class="muted">暂无演员信息。</div>`
           }
         </div>
       </section>
-
       <section class="detail-block">
         <h4>维护方式</h4>
         <div class="detail-actions">
@@ -665,21 +671,19 @@ async function openDetail(movieId) {
   `;
 
   elements.detailContent.querySelector("[data-close-detail]")?.addEventListener("click", closeDetailDrawer);
-  elements.detailContent.querySelector("[data-remove-movie]")?.addEventListener("click", () => removeMovie(detail.id));
+  elements.detailContent.querySelector("[data-remove-movie]")?.addEventListener("click", () => {
+    removeMovieLocally(detail.id);
+    closeDetailDrawer();
+  });
 }
 
-function removeMovie(movieId) {
+function removeMovieLocally(movieId) {
   state.library.movies = state.library.movies
     .filter((movie) => movie.id !== movieId)
     .map((movie, index) => ({ ...movie, order: index }));
   state.sourceLibrary.entries = state.sourceLibrary.entries.filter((entry) => Number(entry.tmdbId) !== movieId);
-
   persistLocalDraft();
-  buildRegionOptions();
-  renderGenreChips();
-  updateStats();
-  renderLibrary();
-  closeDetailDrawer();
+  refreshLibraryViews();
   showToast("已从本地草稿移除。");
 }
 
@@ -696,9 +700,7 @@ async function handleRemoteLogin(event) {
     const response = await fetch("/api/admin/session", {
       method: "POST",
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     });
 
@@ -736,6 +738,7 @@ async function handleRemoteLogout() {
   state.admin.remoteAuthenticated = false;
   state.admin.mode = "none";
   updateAdminUi();
+  setUserMenuOpen(false);
   showToast("已退出管理员模式。");
 }
 
@@ -746,14 +749,14 @@ function syncSearchModalCopy() {
 
   if (state.admin.mode === "remote") {
     title.textContent = "CLOUDFLARE ADMIN";
-    heading.textContent = "搜索电影并加入云端片库";
-    copy.textContent = "当前为 Cloudflare 管理模式。添加后会立即写入受保护的片库存储。";
+    heading.textContent = "搜索电影并管理云端片库";
+    copy.textContent = "搜索结果里可以直接添加未收录电影，也可以删除已经在片库中的电影，变更会直接写入 Cloudflare KV。";
     return;
   }
 
   title.textContent = "LOCAL ADMIN";
-  heading.textContent = "搜索电影并加入本地草稿";
-  copy.textContent = "仅在本地启用。添加后会保存在浏览器草稿中，你可以再导出新的片单文件。";
+  heading.textContent = "搜索电影并管理本地草稿";
+  copy.textContent = "本地管理员模式下，搜索结果支持添加和删除，变更会保存在浏览器草稿中。";
 }
 
 async function handleSearchSubmit(event) {
@@ -773,11 +776,10 @@ async function handleSearchSubmit(event) {
   elements.searchResults.innerHTML = createLoadingSearchCards(3);
 
   try {
-    const results = state.admin.mode === "remote"
+    state.searchResults = state.admin.mode === "remote"
       ? await remoteSearchMovies(query)
       : await localSearchMovies(query);
-
-    renderSearchResults(results);
+    renderSearchResults();
   } catch (error) {
     console.error(error);
     elements.searchResults.innerHTML = `<div class="empty-state">搜索失败，请稍后重试。</div>`;
@@ -788,9 +790,7 @@ async function remoteSearchMovies(query) {
   const response = await fetch("/api/admin/search", {
     method: "POST",
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
   });
 
@@ -820,18 +820,23 @@ async function localSearchMovies(query) {
   return payload.results || [];
 }
 
-function renderSearchResults(results) {
-  if (!results.length) {
+function renderSearchResults() {
+  if (!state.searchResults.length) {
     elements.searchResults.innerHTML = `<div class="empty-state">没有找到匹配结果，换个中英文片名试试。</div>`;
     return;
   }
 
-  elements.searchResults.innerHTML = results
+  elements.searchResults.innerHTML = state.searchResults
     .slice(0, 10)
     .map((movie) => {
+      const exists = state.library.movies.some((item) => Number(item.id) === Number(movie.id));
       const poster = movie.poster_path
         ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" />`
         : `<div class="search-fallback">NO POSTER</div>`;
+      const badge = exists ? `<span class="result-badge">已在片库中</span>` : "";
+      const actionClass = exists ? "search-result-button remove" : "search-result-button";
+      const actionLabel = exists ? "删除" : "加入片库";
+      const actionAttr = exists ? "data-remove-movie" : "data-add-movie";
 
       return `
         <article class="search-card">
@@ -839,8 +844,9 @@ function renderSearchResults(results) {
           <div>
             <h4>${escapeHtml(movie.title)} <span class="muted">${formatYear(movie.release_date)}</span></h4>
             <p>${escapeHtml(truncate(movie.overview || "暂无简介。", 100))}</p>
+            ${badge}
           </div>
-          <button class="search-result-button" data-add-movie="${movie.id}">加入片库</button>
+          <button class="${actionClass}" ${actionAttr}="${movie.id}">${actionLabel}</button>
         </article>
       `;
     })
@@ -849,10 +855,13 @@ function renderSearchResults(results) {
   elements.searchResults.querySelectorAll("[data-add-movie]").forEach((button) => {
     button.addEventListener("click", () => addMovieById(Number(button.dataset.addMovie)));
   });
+  elements.searchResults.querySelectorAll("[data-remove-movie]").forEach((button) => {
+    button.addEventListener("click", () => removeMovieById(Number(button.dataset.removeMovie)));
+  });
 }
 
 async function addMovieById(movieId) {
-  if (state.library.movies.some((movie) => movie.id === movieId)) {
+  if (state.library.movies.some((movie) => Number(movie.id) === movieId)) {
     showToast("这部电影已经在当前片库里了。");
     return;
   }
@@ -864,16 +873,30 @@ async function addMovieById(movieId) {
       await addMovieLocally(movieId);
     }
 
-    buildRegionOptions();
-    renderGenreChips();
-    updateStats();
-    renderLibrary();
+    refreshLibraryViews();
     updateFeaturedMovie(movieId);
-    closeModal(elements.searchModal);
-    showToast(state.admin.mode === "remote" ? "已写入云端片库。" : "已加入本地草稿，可导出新的 data 文件。");
+    renderSearchResults();
+    showToast(state.admin.mode === "remote" ? "已写入云端片库。" : "已加入本地草稿。");
   } catch (error) {
     console.error(error);
     showToast("添加失败，请稍后重试。");
+  }
+}
+
+async function removeMovieById(movieId) {
+  try {
+    if (state.admin.mode === "remote") {
+      await removeMovieRemotely(movieId);
+    } else {
+      removeMovieLocally(movieId);
+    }
+
+    refreshLibraryViews();
+    renderSearchResults();
+    showToast(state.admin.mode === "remote" ? "已从云端片库删除。" : "已从本地草稿删除。");
+  } catch (error) {
+    console.error(error);
+    showToast("删除失败，请稍后重试。");
   }
 }
 
@@ -889,7 +912,6 @@ async function addMovieLocally(movieId) {
     year: Number(detail.release_date?.slice(0, 4)) || undefined,
     tmdbId: detail.id,
   });
-
   persistLocalDraft();
 }
 
@@ -897,9 +919,7 @@ async function addMovieRemotely(movieId) {
   const response = await fetch("/api/admin/add", {
     method: "POST",
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       movieId,
       sourceLibrary: state.admin.remoteSeeded ? undefined : state.sourceLibrary,
@@ -924,27 +944,58 @@ async function addMovieRemotely(movieId) {
   state.admin.remoteSeeded = true;
 }
 
+async function removeMovieRemotely(movieId) {
+  const response = await fetch("/api/admin/remove", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      movieId,
+      sourceLibrary: state.admin.remoteSeeded ? undefined : state.sourceLibrary,
+      resolvedLibrary: state.admin.remoteSeeded ? undefined : state.library,
+    }),
+  });
+
+  if (response.status === 401) {
+    state.admin.remoteAuthenticated = false;
+    state.admin.mode = "none";
+    updateAdminUi();
+    throw new Error("管理员会话已失效");
+  }
+
+  if (!response.ok) {
+    throw new Error(`远程删除失败: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  state.sourceLibrary = normalizeSourceLibrary(payload.sourceLibrary);
+  state.library = normalizeResolvedLibrary(payload.library);
+  state.admin.remoteSeeded = true;
+}
+
+function refreshLibraryViews() {
+  state.library.movies = state.library.movies.map((movie, index) => ({ ...movie, order: index }));
+  buildRegionOptions();
+  renderGenreChips();
+  updateStats();
+  renderLibrary();
+}
+
 function exportSourceLibrary() {
-  downloadJson(
-    "library.json",
-    {
-      title: state.sourceLibrary.title,
-      subtitle: state.sourceLibrary.subtitle,
-      entries: state.sourceLibrary.entries,
-    }
-  );
+  downloadJson("library.json", {
+    title: state.sourceLibrary.title,
+    subtitle: state.sourceLibrary.subtitle,
+    entries: state.sourceLibrary.entries,
+  });
   showToast("已导出 library.json。");
 }
 
 function exportResolvedLibrary() {
-  downloadJson(
-    "library.resolved.json",
-    {
-      title: state.library.title,
-      subtitle: state.library.subtitle,
-      movies: state.library.movies,
-    }
-  );
+  downloadJson("library.resolved.json", {
+    title: state.library.title,
+    subtitle: state.library.subtitle,
+    movies: state.library.movies,
+  });
   showToast("已导出 library.resolved.json。");
 }
 
@@ -962,17 +1013,14 @@ function downloadJson(filename, data) {
 
 async function fetchFromMovieDb(path, params = {}) {
   await throttleBrowserRequests();
-
   const search = new URLSearchParams({
     api_key: state.admin.apiKey,
     ...params,
   });
   const response = await fetch(`${MOVIE_DB_BASE_URL}${path}?${search.toString()}`);
-
   if (!response.ok) {
     throw new Error(`电影资料请求失败: ${response.status}`);
   }
-
   return response.json();
 }
 
@@ -1017,7 +1065,6 @@ function getReleaseCountry(detail) {
   const preferred = releaseResults.find((item) => item.iso_3166_1 === "CN")
     || releaseResults.find((item) => item.iso_3166_1 === "US")
     || releaseResults[0];
-
   if (!preferred) {
     return "";
   }
@@ -1069,11 +1116,7 @@ function closeModal(modal) {
 }
 
 function getImageUrl(path, size = "w780") {
-  if (!path) {
-    return "";
-  }
-
-  return `${IMAGE_BASE_URL}${size}${path}`;
+  return path ? `${IMAGE_BASE_URL}${size}${path}` : "";
 }
 
 function showToast(message) {

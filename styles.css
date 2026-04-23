@@ -146,50 +146,64 @@ img {
   color: var(--text-soft);
 }
 
-.topbar-actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+.user-hub {
+  position: relative;
+  width: min(340px, 100%);
 }
 
-.topbar-status {
-  max-width: 360px;
-  padding: 18px 20px;
+.user-trigger {
+  min-width: 146px;
+  justify-content: space-between;
+}
+
+.user-trigger::after {
+  content: "▾";
+  margin-left: 10px;
+  opacity: 0.7;
+}
+
+.user-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(320px, 92vw);
+  padding: 12px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 999px;
-  font-size: 0.78rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #160d03;
-  background: linear-gradient(135deg, #ffd39f, #ff8f2f);
+.user-menu.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
-.status-copy {
-  margin: 12px 0 0;
-  line-height: 1.7;
-  color: rgba(244, 242, 237, 0.72);
-}
-
-.status-actions {
+.user-menu-item {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
 }
 
-.compact-button {
-  padding: 10px 14px;
-  font-size: 0.9rem;
+.user-menu-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.user-menu-note {
+  margin: 10px 4px 2px;
+  line-height: 1.7;
+  color: rgba(244, 242, 237, 0.68);
+  font-size: 0.92rem;
+}
+
+.danger-text {
+  color: #ff9b9d;
 }
 
 .primary-button,
@@ -839,6 +853,23 @@ input[type="range"] {
   background: linear-gradient(135deg, #ffd39f, #ff8f2f);
 }
 
+.search-result-button.remove {
+  color: #ffafb0;
+  background: rgba(255, 77, 79, 0.12);
+  border: 1px solid rgba(255, 77, 79, 0.26);
+}
+
+.result-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 textarea {
   margin-top: 18px;
   resize: vertical;
@@ -910,8 +941,8 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .topbar-status {
-    max-width: none;
+  .user-hub {
+    width: 100%;
   }
 
   .hero-panel,

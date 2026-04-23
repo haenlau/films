@@ -10,25 +10,23 @@ export default {
     if (url.pathname === "/api/library" && request.method === "GET") {
       return handleGetLibrary(env);
     }
-
     if (url.pathname === "/api/admin/session" && request.method === "GET") {
       return handleGetSession(request, env);
     }
-
     if (url.pathname === "/api/admin/session" && request.method === "POST") {
       return handleLogin(request, env);
     }
-
     if (url.pathname === "/api/admin/session" && request.method === "DELETE") {
       return handleLogout(request);
     }
-
     if (url.pathname === "/api/admin/search" && request.method === "POST") {
       return withAuth(request, env, () => handleSearch(request, env));
     }
-
     if (url.pathname === "/api/admin/add" && request.method === "POST") {
       return withAuth(request, env, () => handleAddMovie(request, env));
+    }
+    if (url.pathname === "/api/admin/remove" && request.method === "POST") {
+      return withAuth(request, env, () => handleRemoveMovie(request, env));
     }
 
     return env.ASSETS.fetch(request);
@@ -52,7 +50,6 @@ async function handleGetSession(request, env) {
 
   const authenticated = await verifySession(request, env);
   const seeded = Boolean(await env.FILM_VAULT_KV.get(KV_RESOLVED_KEY));
-
   return json({ available: true, authenticated, seeded }, 200);
 }
 
@@ -119,7 +116,6 @@ async function handleSearch(request, env) {
 async function handleAddMovie(request, env) {
   const body = await request.json().catch(() => ({}));
   const movieId = Number(body.movieId);
-
   if (!Number.isInteger(movieId)) {
     return json({ message: "movieId is required." }, 400);
   }
@@ -132,9 +128,7 @@ async function handleAddMovie(request, env) {
   }
 
   const detail = await fetchMovieDetail(env, movieId);
-  const transformed = transformMovie(detail, currentResolved.movies.length);
-
-  currentResolved.movies.push(transformed);
+  currentResolved.movies.push(transformMovie(detail, currentResolved.movies.length));
   currentSource.entries.push({
     title: detail.title,
     year: Number(detail.release_date?.slice(0, 4)) || undefined,
@@ -143,6 +137,27 @@ async function handleAddMovie(request, env) {
 
   currentResolved.movies = currentResolved.movies.map((movie, index) => ({ ...movie, order: index }));
   currentSource.entries = dedupeEntries(currentSource.entries);
+
+  await env.FILM_VAULT_KV.put(KV_SOURCE_KEY, JSON.stringify(currentSource));
+  await env.FILM_VAULT_KV.put(KV_RESOLVED_KEY, JSON.stringify(currentResolved));
+
+  return json({ sourceLibrary: currentSource, library: currentResolved }, 200);
+}
+
+async function handleRemoveMovie(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const movieId = Number(body.movieId);
+  if (!Number.isInteger(movieId)) {
+    return json({ message: "movieId is required." }, 400);
+  }
+
+  const currentSource = await loadSourceLibrary(env, body.sourceLibrary);
+  const currentResolved = await loadResolvedLibrary(env, body.resolvedLibrary);
+
+  currentResolved.movies = currentResolved.movies
+    .filter((movie) => Number(movie.id) !== movieId)
+    .map((movie, index) => ({ ...movie, order: index }));
+  currentSource.entries = currentSource.entries.filter((entry) => Number(entry.tmdbId) !== movieId);
 
   await env.FILM_VAULT_KV.put(KV_SOURCE_KEY, JSON.stringify(currentSource));
   await env.FILM_VAULT_KV.put(KV_RESOLVED_KEY, JSON.stringify(currentResolved));

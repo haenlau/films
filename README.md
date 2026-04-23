@@ -63,7 +63,7 @@ window.FILM_VAULT_ADMIN = {
 };
 ```
 
-- 双击打开 `index.html` 后，右上角会出现“搜索添加 / 导出片单 / 导出完整数据”
+- 双击打开 `index.html` 后，右上角通过“用户中心”进入本地管理菜单
 - 添加结果会先保存到浏览器本地草稿，并在刷新后保留
 - 你可以直接从页面导出新的 `library.json` 和 `library.resolved.json`
 
@@ -90,21 +90,16 @@ SESSION_SECRET
 - 首次部署时，公开页面会先读取仓库里的静态 `data/library.*`
 - 第一次通过管理员模式添加电影时，Worker 会自动把当前片库写入 KV
 - 此后线上站点优先读取 KV 中的片库数据
+- 管理员后续的添加和删除都会直接写入 KV，不依赖 GitHub 自动提交
 
 ### 推荐本地预览方式
 
 - 纯静态预览：直接双击 `index.html`
 - Cloudflare 管理预览：使用 `wrangler pages dev .`
 
-## GitHub secrets
-
-- 不要把 `.dev.vars`、`.env*` 提交到仓库
-- 如果要在 GitHub Actions 里自动生成 `data/library.resolved.json`，把 `TMDB_API_KEY` 配置为仓库 Secret
-- 仓库已经附带 `.github/workflows/rebuild-library.yml`
-
 ## 只让你自己使用搜索添加
 
 - 当前实现采用“双轨维护”模式
 - 本地可直接双击打开并使用本地管理员模式
-- Cloudflare 上线后，只有通过管理员密码鉴权，才可以调用搜索和添加接口
+- Cloudflare 上线后，只有通过管理员密码鉴权，才可以调用搜索、添加和删除接口
 - 公开访客仍然只能浏览和搜索你已经看过的电影
