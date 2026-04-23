@@ -1,0 +1,35 @@
+name: Rebuild Library
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "data/library.json"
+      - "scripts/**"
+      - ".github/workflows/rebuild-library.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Rebuild resolved library
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: node ./scripts/rebuild-library.mjs
+
+      - name: Commit resolved data
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: rebuild resolved library"
+          file_pattern: data/library.resolved.json

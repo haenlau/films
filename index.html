@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Film Vault | 电影墙</title>
+  <meta
+    name="description"
+    content="高设计感私人电影墙，以只读展厅方式陈列你看过的所有电影。"
+  />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <div class="bg-orb orb-left"></div>
+    <div class="bg-orb orb-right"></div>
+    <div class="noise"></div>
+
+    <header class="topbar">
+      <div class="brand-block">
+        <p class="brand-mark">FILM VAULT</p>
+        <h1 id="pageTitle">我的电影墙</h1>
+        <p class="brand-copy" id="pageSubtitle">
+          一面为私人观影史准备的电影墙，用沉浸式视觉把每一次观看变成可回看的馆藏。
+        </p>
+      </div>
+
+      <div class="topbar-status">
+        <div class="status-pill">PRIVATE ARCHIVE</div>
+        <p class="status-copy">站点为只读展厅。更新片单时，修改 `data/library.json` 后重新部署即可。</p>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="hero-panel panel">
+        <div class="hero-backdrop" id="heroBackdrop"></div>
+        <div class="hero-content">
+          <div class="eyebrow-row">
+            <span class="eyebrow">CURATED WALL</span>
+            <span class="eyebrow subtle" id="heroMeta">私人片库正在载入中...</span>
+          </div>
+          <div class="hero-copy">
+            <h2 id="heroTitle">准备点亮你的观影档案</h2>
+            <p id="heroOverview">
+              这是一个面向长期收藏的只读电影展厅，适合承载数百部电影的筛选、浏览与回看。
+            </p>
+          </div>
+          <div class="hero-tags" id="heroTags"></div>
+          <div class="hero-actions">
+            <button class="primary-button" id="heroShuffleButton">换一张主视觉</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats-strip">
+        <article class="stat-card panel">
+          <span class="stat-label">总片量</span>
+          <strong class="stat-value" id="statCount">0</strong>
+          <span class="stat-note">适合 500+ 部规模扩展</span>
+        </article>
+        <article class="stat-card panel">
+          <span class="stat-label">平均评分</span>
+          <strong class="stat-value" id="statRating">0.0</strong>
+          <span class="stat-note">基于公开电影资料自动统计</span>
+        </article>
+        <article class="stat-card panel">
+          <span class="stat-label">覆盖年代</span>
+          <strong class="stat-value" id="statDecades">0</strong>
+          <span class="stat-note">按上映年份自动计算</span>
+        </article>
+        <article class="stat-card panel">
+          <span class="stat-label">地区数量</span>
+          <strong class="stat-value" id="statRegions">0</strong>
+          <span class="stat-note">按出品国家或地区统计</span>
+        </article>
+      </section>
+
+      <section class="filters-grid">
+        <div class="filter-panel panel">
+          <label class="field-label" for="librarySearch">片库搜索</label>
+          <div class="search-inline">
+            <input
+              type="search"
+              id="librarySearch"
+              placeholder="搜索片名、简介、国家或类型"
+              autocomplete="off"
+            />
+          </div>
+        </div>
+
+        <div class="filter-panel panel">
+          <label class="field-label" for="sortSelect">排序方式</label>
+          <select id="sortSelect">
+            <option value="rating">评分优先</option>
+            <option value="release">上映时间</option>
+            <option value="title">片名字母</option>
+            <option value="added">片单顺序</option>
+          </select>
+        </div>
+
+        <div class="filter-panel panel">
+          <label class="field-label" for="regionSelect">地区筛选</label>
+          <select id="regionSelect">
+            <option value="all">全部地区</option>
+          </select>
+        </div>
+
+        <div class="filter-panel panel">
+          <label class="field-label" for="ratingRange">最低评分</label>
+          <div class="range-row">
+            <input type="range" id="ratingRange" min="0" max="10" step="0.5" value="0" />
+            <span id="ratingRangeValue">0.0+</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel genre-panel">
+        <div class="section-head">
+          <div>
+            <span class="section-kicker">GENRES</span>
+            <h3>类型筛选</h3>
+          </div>
+          <p id="genreHint">点击类型标签，快速重组电影墙。</p>
+        </div>
+        <div class="genre-chips" id="genreChips"></div>
+      </section>
+
+      <section class="section-head wall-head">
+        <div>
+          <span class="section-kicker">MOVIE WALL</span>
+          <h3>已看电影</h3>
+        </div>
+        <p id="resultsMeta">正在准备你的电影海报矩阵...</p>
+      </section>
+
+      <section class="movie-wall" id="movieWall"></section>
+    </main>
+  </div>
+
+  <aside class="detail-drawer" id="detailDrawer" aria-hidden="true">
+    <button class="drawer-close" id="closeDetail" aria-label="关闭详情">×</button>
+    <div class="detail-scroll" id="detailContent"></div>
+  </aside>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>

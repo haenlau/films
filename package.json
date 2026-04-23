@@ -1,0 +1,9 @@
+{
+  "name": "film-vault-wall",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "rebuild:library": "node ./scripts/rebuild-library.mjs",
+    "add:movie": "node ./scripts/add-movie.mjs"
+  }
+}
