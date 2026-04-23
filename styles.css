@@ -428,6 +428,8 @@ textarea,
   padding: 14px 16px;
   color: var(--text);
   outline: none;
+  background: transparent;
+  border: 0;
 }
 
 input::placeholder,
@@ -445,6 +447,11 @@ select {
     calc(100% - 18px) calc(50% - 3px);
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
+}
+
+select option {
+  color: var(--text);
+  background: #101724;
 }
 
 .range-row {

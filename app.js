@@ -24,6 +24,9 @@ const state = {
   admin: {
     mode: "none",
     apiKey: "",
+    localAvailable: false,
+    localAuthenticated: false,
+    localPassword: "",
     remoteAvailable: false,
     remoteAuthenticated: false,
     remoteSeeded: false,
@@ -71,6 +74,8 @@ const elements = {
   searchResults: document.getElementById("searchResults"),
   loginModal: document.getElementById("loginModal"),
   closeLoginModal: document.getElementById("closeLoginModal"),
+  loginTitle: document.getElementById("loginTitle"),
+  loginCopy: document.getElementById("loginCopy"),
   adminLoginForm: document.getElementById("adminLoginForm"),
   adminPasswordInput: document.getElementById("adminPasswordInput"),
   loginMessage: document.getElementById("loginMessage"),
@@ -88,8 +93,9 @@ async function init() {
 function configureLocalAdminMode() {
   const config = window.FILM_VAULT_ADMIN || {};
   if (window.location.protocol === "file:" && config.apiKey) {
-    state.admin.mode = "local";
+    state.admin.localAvailable = true;
     state.admin.apiKey = String(config.apiKey).trim();
+    state.admin.localPassword = String(config.password || "").trim();
   }
 
   updateAdminUi();
@@ -127,6 +133,7 @@ function bindEvents() {
   });
   elements.adminLoginButton?.addEventListener("click", () => {
     setUserMenuOpen(false);
+    syncLoginModalCopy();
     openModal(elements.loginModal);
   });
   elements.adminLogoutButton?.addEventListener("click", handleRemoteLogout);
@@ -234,30 +241,37 @@ async function initializeRemoteAdmin() {
 }
 
 function updateAdminUi() {
-  const isLocalAdmin = state.admin.mode === "local";
+  const isLocalAdmin = state.admin.mode === "local" && state.admin.localAuthenticated;
   const isRemoteAdmin = state.admin.mode === "remote" && state.admin.remoteAuthenticated;
-  const canAttemptRemoteLogin = !isLocalAdmin && /^https?:$/.test(window.location.protocol);
+  const canAttemptLocalLogin = state.admin.localAvailable && !state.admin.localAuthenticated;
+  const canAttemptRemoteLogin = !state.admin.localAvailable && /^https?:$/.test(window.location.protocol);
   const canManage = isLocalAdmin || isRemoteAdmin;
 
   elements.openSearch.hidden = !canManage;
   elements.exportSource.hidden = !isLocalAdmin;
   elements.exportResolved.hidden = !isLocalAdmin;
-  elements.adminLoginButton.hidden = !(canAttemptRemoteLogin && !state.admin.remoteAuthenticated);
-  elements.adminLogoutButton.hidden = !isRemoteAdmin;
+  elements.adminLoginButton.hidden = !(canAttemptLocalLogin || (canAttemptRemoteLogin && !state.admin.remoteAuthenticated));
+  elements.adminLogoutButton.hidden = !canManage;
 
   if (isLocalAdmin) {
-    elements.userMenuButton.textContent = "馆藏台 · 本地管理";
+    elements.userMenuButton.textContent = "控制台 · 本地已登录";
   } else if (isRemoteAdmin) {
-    elements.userMenuButton.textContent = "馆藏台 · 已登录";
+    elements.userMenuButton.textContent = "控制台 · 已登录";
   } else {
-    elements.userMenuButton.textContent = "馆藏台";
+    elements.userMenuButton.textContent = "控制台";
   }
 
   if (isLocalAdmin) {
+    elements.adminLogoutButton.textContent = "退出登录";
     elements.statusCopy.textContent = "本地管理员模式已启用。你可以搜索添加电影，也可以导出新的片库文件。";
   } else if (isRemoteAdmin) {
+    elements.adminLogoutButton.textContent = "退出登录";
     elements.statusCopy.textContent = "你已进入管理员模式。现在可以搜索添加电影，或在搜索结果里删除已存在的电影，变更会直接写入 Cloudflare KV。";
+  } else if (canAttemptLocalLogin) {
+    elements.adminLoginButton.textContent = "登录管理";
+    elements.statusCopy.textContent = "当前是本地预览模式。登录后可以进入管理状态，搜索添加或导出片库。";
   } else if (canAttemptRemoteLogin) {
+    elements.adminLoginButton.textContent = "管理员登录";
     elements.statusCopy.textContent = "公开访客只能浏览和搜索已添加电影。登录后，才可以搜索添加或删除片库内容。";
   } else {
     elements.statusCopy.textContent = "当前是本地只读预览模式。公开搜索始终可用；若要页面内维护，请使用本地管理员模式或部署 Cloudflare 后登录。";
@@ -269,6 +283,19 @@ function setUserMenuOpen(open) {
   elements.userMenu?.classList.toggle("open", open);
   elements.userMenu?.setAttribute("aria-hidden", String(!open));
   elements.userMenuButton?.setAttribute("aria-expanded", String(open));
+}
+
+function syncLoginModalCopy() {
+  if (state.admin.localAvailable && window.location.protocol === "file:") {
+    elements.loginTitle.textContent = "本地管理登录";
+    elements.loginCopy.textContent = "输入你在 admin.local.js 中配置的本地管理密码，进入可添加和导出的维护模式。";
+    elements.adminPasswordInput.placeholder = "输入本地管理密码";
+    return;
+  }
+
+  elements.loginTitle.textContent = "管理员登录";
+  elements.loginCopy.textContent = "上线后，只有通过管理员密码鉴权，才能搜索并添加你看过的电影。";
+  elements.adminPasswordInput.placeholder = "输入管理员密码";
 }
 
 async function loadResolvedLibrary() {
@@ -703,6 +730,22 @@ async function handleRemoteLogin(event) {
     return;
   }
 
+  if (state.admin.localAvailable && !state.admin.remoteAvailable && window.location.protocol === "file:") {
+    if (!state.admin.localPassword || password === state.admin.localPassword) {
+      state.admin.localAuthenticated = true;
+      state.admin.mode = "local";
+      elements.adminPasswordInput.value = "";
+      elements.loginMessage.innerHTML = "";
+      updateAdminUi();
+      closeModal(elements.loginModal);
+      showToast("本地管理登录成功。");
+      return;
+    }
+
+    elements.loginMessage.innerHTML = `<div class="empty-state">本地管理密码不正确。</div>`;
+    return;
+  }
+
   try {
     const response = await fetch("/api/admin/session", {
       method: "POST",
@@ -733,6 +776,15 @@ async function handleRemoteLogin(event) {
 }
 
 async function handleRemoteLogout() {
+  if (state.admin.mode === "local") {
+    state.admin.localAuthenticated = false;
+    state.admin.mode = "none";
+    updateAdminUi();
+    setUserMenuOpen(false);
+    showToast("已退出本地管理。");
+    return;
+  }
+
   try {
     await fetch("/api/admin/session", {
       method: "DELETE",
