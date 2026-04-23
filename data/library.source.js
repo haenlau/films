@@ -1,6 +1,7 @@
 window.__FILM_VAULT_SOURCE__ = {
   "title": "我的电影墙",
   "subtitle": "一面为私人观影史准备的电影墙，用沉浸式视觉把每一次观看变成可回看的馆藏。",
+  "generatedAt": "2026-04-23T07:21:39.265Z",
   "entries": [
     {
       "title": "黑洞频率",
@@ -713,11 +714,6 @@ window.__FILM_VAULT_SOURCE__ = {
       "tmdbId": 184614
     },
     {
-      "title": "魁拔之十万火急",
-      "year": 2011,
-      "tmdbId": 184614
-    },
-    {
       "title": "魁拔之大战元泱界",
       "year": 2013,
       "tmdbId": 331249
@@ -1386,11 +1382,6 @@ window.__FILM_VAULT_SOURCE__ = {
       "title": "终结者6：黑暗命运",
       "year": 2019,
       "tmdbId": 290859
-    },
-    {
-      "title": "终结者2：审判日",
-      "year": 1991,
-      "tmdbId": 280
     },
     {
       "title": "终结者2：审判日",

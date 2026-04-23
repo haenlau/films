@@ -262,28 +262,28 @@ function updateAdminUi() {
     elements.authActionButton.textContent = "退出登录";
     elements.authActionButton.classList.remove("primary-button");
     elements.authActionButton.classList.add("ghost-button");
-    elements.statusCopy.textContent = "本地管理员模式已启用。你可以搜索添加电影，也可以导出新的片库文件。";
+    elements.statusCopy.textContent = "已登录，可管理本地片库。";
   } else if (isRemoteAdmin) {
     elements.authActionButton.hidden = false;
     elements.authActionButton.textContent = "退出登录";
     elements.authActionButton.classList.remove("primary-button");
     elements.authActionButton.classList.add("ghost-button");
-    elements.statusCopy.textContent = "你已进入管理员模式。现在可以搜索添加电影，或在搜索结果里删除已存在的电影，变更会直接写入 Cloudflare KV。";
+    elements.statusCopy.textContent = "已登录，可管理线上片库。";
   } else if (canAttemptLocalLogin) {
     elements.authActionButton.hidden = false;
     elements.authActionButton.textContent = "登录管理";
     elements.authActionButton.classList.remove("ghost-button");
     elements.authActionButton.classList.add("primary-button");
-    elements.statusCopy.textContent = "当前是本地预览模式。登录后可以进入管理状态，搜索添加或导出片库。";
+    elements.statusCopy.textContent = "登录后可添加影片或导出片库。";
   } else if (canAttemptRemoteLogin) {
     elements.authActionButton.hidden = false;
     elements.authActionButton.textContent = "管理员登录";
     elements.authActionButton.classList.remove("ghost-button");
     elements.authActionButton.classList.add("primary-button");
-    elements.statusCopy.textContent = "公开访客只能浏览和搜索已添加电影。登录后，才可以搜索添加或删除片库内容。";
+    elements.statusCopy.textContent = "登录后可管理线上片库。";
   } else {
     elements.authActionButton.hidden = true;
-    elements.statusCopy.textContent = "当前是本地只读预览模式。公开搜索始终可用；若要页面内维护，请使用本地管理员模式或部署 Cloudflare 后登录。";
+    elements.statusCopy.textContent = "当前为只读浏览模式。";
   }
 }
 

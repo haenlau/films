@@ -5,6 +5,7 @@ const source = await readSourceLibrary();
 const entries = dedupeEntries(source.entries);
 const resolvedEntries = [];
 const movies = [];
+const generatedAt = new Date().toISOString();
 
 for (const [index, entry] of entries.entries()) {
   const match = entry.tmdbId
@@ -30,12 +31,14 @@ for (const [index, entry] of entries.entries()) {
 await writeSourceLibrary({
   title: source.title,
   subtitle: source.subtitle,
+  generatedAt,
   entries: resolvedEntries,
 });
 
 await writeResolvedLibrary({
   title: source.title,
   subtitle: source.subtitle,
+  generatedAt,
   movies,
 });
 

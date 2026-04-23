@@ -34,12 +34,12 @@ export default {
 };
 
 async function handleGetLibrary(env) {
-  const resolvedRaw = await env.FILM_VAULT_KV?.get(KV_RESOLVED_KEY);
-  if (!resolvedRaw) {
+  const { resolvedLibrary } = await ensureLibraryState(env);
+  if (!resolvedLibrary?.movies?.length) {
     return json({ message: "Library not seeded yet." }, 404);
   }
 
-  return json(JSON.parse(resolvedRaw), 200);
+  return json(resolvedLibrary, 200);
 }
 
 async function handleGetSession(request, env) {
@@ -48,8 +48,9 @@ async function handleGetSession(request, env) {
     return json({ available: false, authenticated: false, seeded: false }, 200);
   }
 
+  const { resolvedLibrary } = await ensureLibraryState(env);
   const authenticated = await verifySession(request, env);
-  const seeded = Boolean(await env.FILM_VAULT_KV.get(KV_RESOLVED_KEY));
+  const seeded = Boolean(resolvedLibrary?.movies?.length);
   return json({ available: true, authenticated, seeded }, 200);
 }
 
@@ -63,8 +64,9 @@ async function handleLogin(request, env) {
     return json({ message: "Unauthorized" }, 401);
   }
 
+  const { resolvedLibrary } = await ensureLibraryState(env);
   const token = await createSessionToken(env);
-  const seeded = Boolean(await env.FILM_VAULT_KV.get(KV_RESOLVED_KEY));
+  const seeded = Boolean(resolvedLibrary?.movies?.length);
   const headers = new Headers({
     "Set-Cookie": buildCookie(request, token),
   });
@@ -259,6 +261,7 @@ function normalizeSourceLibrary(data) {
   return {
     title: data?.title || "我的电影墙",
     subtitle: data?.subtitle || "",
+    generatedAt: data?.generatedAt || "",
     entries: Array.isArray(data?.entries) ? data.entries : [],
   };
 }
@@ -267,8 +270,73 @@ function normalizeResolvedLibrary(data) {
   return {
     title: data?.title || "我的电影墙",
     subtitle: data?.subtitle || "",
+    generatedAt: data?.generatedAt || "",
     movies: Array.isArray(data?.movies) ? data.movies : [],
   };
+}
+
+async function ensureLibraryState(env) {
+  const [kvSourceRaw, kvResolvedRaw, staticSource, staticResolved] = await Promise.all([
+    env.FILM_VAULT_KV?.get(KV_SOURCE_KEY),
+    env.FILM_VAULT_KV?.get(KV_RESOLVED_KEY),
+    loadStaticAssetJson(env, "/data/library.json"),
+    loadStaticAssetJson(env, "/data/library.resolved.json"),
+  ]);
+
+  const kvSource = kvSourceRaw ? normalizeSourceLibrary(JSON.parse(kvSourceRaw)) : null;
+  const kvResolved = kvResolvedRaw ? normalizeResolvedLibrary(JSON.parse(kvResolvedRaw)) : null;
+  const normalizedStaticSource = staticSource ? normalizeSourceLibrary(staticSource) : null;
+  const normalizedStaticResolved = staticResolved ? normalizeResolvedLibrary(staticResolved) : null;
+
+  const shouldRefreshFromStatic =
+    normalizedStaticResolved
+    && (
+      !kvResolved
+      || isStaticNewer(normalizedStaticResolved, kvResolved)
+      || (normalizedStaticResolved.movies.length > kvResolved.movies.length)
+    );
+
+  if (shouldRefreshFromStatic) {
+    if (normalizedStaticSource) {
+      await env.FILM_VAULT_KV.put(KV_SOURCE_KEY, JSON.stringify(normalizedStaticSource));
+    }
+    await env.FILM_VAULT_KV.put(KV_RESOLVED_KEY, JSON.stringify(normalizedStaticResolved));
+
+    return {
+      sourceLibrary: normalizedStaticSource,
+      resolvedLibrary: normalizedStaticResolved,
+    };
+  }
+
+  return {
+    sourceLibrary: kvSource || normalizedStaticSource,
+    resolvedLibrary: kvResolved || normalizedStaticResolved,
+  };
+}
+
+async function loadStaticAssetJson(env, pathname) {
+  try {
+    const response = await env.ASSETS.fetch(new Request(`https://film-vault.local${pathname}`));
+    if (!response.ok) {
+      return null;
+    }
+
+    return response.json();
+  } catch (error) {
+    console.warn(`Failed to load static asset ${pathname}`, error);
+    return null;
+  }
+}
+
+function isStaticNewer(staticLibrary, kvLibrary) {
+  if (!staticLibrary?.generatedAt) {
+    return false;
+  }
+  if (!kvLibrary?.generatedAt) {
+    return true;
+  }
+
+  return new Date(staticLibrary.generatedAt).getTime() > new Date(kvLibrary.generatedAt).getTime();
 }
 
 async function fetchMovieDetail(env, movieId) {
