@@ -40,6 +40,10 @@
       <div class="topbar-status" id="topbarStatus">
         <div class="status-pill">PRIVATE ARCHIVE</div>
         <p class="status-copy" id="statusCopy">站点为只读展厅。更新片单时，修改 `data/library.json` 后重新部署即可。</p>
+        <div class="status-actions">
+          <button class="ghost-button compact-button" id="adminLoginButton" hidden>管理员登录</button>
+          <button class="ghost-button compact-button" id="adminLogoutButton" hidden>退出管理</button>
+        </div>
       </div>
     </header>
 
@@ -169,6 +173,24 @@
         <button class="primary-button" type="submit">搜索</button>
       </form>
       <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="loginModal" aria-hidden="true">
+    <div class="modal-card panel">
+      <div class="modal-head">
+        <div>
+          <span class="section-kicker">ADMIN ACCESS</span>
+          <h3>管理员登录</h3>
+        </div>
+        <button class="drawer-close modal-close" id="closeLoginModal" aria-label="关闭登录">×</button>
+      </div>
+      <p class="modal-copy">上线后，只有通过管理员密码鉴权，才能搜索并添加你看过的电影。</p>
+      <form class="modal-search" id="adminLoginForm">
+        <input type="password" id="adminPasswordInput" placeholder="输入管理员密码" />
+        <button class="primary-button" type="submit">登录</button>
+      </form>
+      <div class="search-results" id="loginMessage"></div>
     </div>
   </div>
 

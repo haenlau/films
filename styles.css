@@ -180,6 +180,18 @@ img {
   color: rgba(244, 242, 237, 0.72);
 }
 
+.status-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.compact-button {
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+
 .primary-button,
 .ghost-button,
 .drawer-close,

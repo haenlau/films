@@ -1,6 +1,10 @@
 # Film Vault
 
 这是一个公开只读、私下维护的电影墙。
+当前项目已经兼容两种使用方式：
+
+- 本地双击 `index.html` 直接预览，并用本地管理员模式维护
+- 部署到 Cloudflare Pages 后，通过 `_worker.js` 提供受保护的管理接口
 
 ## 数据结构
 
@@ -40,13 +44,16 @@ npm run rebuild:library
 
 ## 部署
 
-- 前端页面只读取 `data/library.resolved.json`
+- 前端页面会优先读取 Cloudflare `/api/library`
+- 当远程接口不可用时，自动回退到本地 `data/library.resolved.json`
 - 不在浏览器里暴露密钥
 - 兼容 Cloudflare Pages / Workers 静态部署
 
 ## 页面内搜索添加
 
-- 页面内搜索添加只在本地环境启用，不会出现在公开部署站点
+- 页面内搜索添加在两种场景可用：
+- 本地双击预览时，使用未提交的 `admin.local.js`
+- 部署到 Cloudflare 后，使用管理员登录进入远程管理模式
 - 根目录放一个不提交到 Git 的 `admin.local.js`
 - 示例文件见 `admin.local.example.js`
 
@@ -60,6 +67,35 @@ window.FILM_VAULT_ADMIN = {
 - 添加结果会先保存到浏览器本地草稿，并在刷新后保留
 - 你可以直接从页面导出新的 `library.json` 和 `library.resolved.json`
 
+## Cloudflare 部署
+
+- 项目根目录的 `_worker.js` 提供 Cloudflare Pages 高级模式接口
+- 公开访问时，站点仍然只读
+- 只有管理员登录后，才可以在页面内搜索并添加电影
+
+### 需要配置的 Cloudflare 项
+
+1. 复制 `wrangler.example.toml` 为 `wrangler.toml`
+2. 创建一个 KV namespace，并绑定为 `FILM_VAULT_KV`
+3. 在 Cloudflare Pages / Workers 里配置以下 Secrets
+
+```text
+TMDB_API_KEY
+ADMIN_PASSWORD
+SESSION_SECRET
+```
+
+### 数据写入方式
+
+- 首次部署时，公开页面会先读取仓库里的静态 `data/library.*`
+- 第一次通过管理员模式添加电影时，Worker 会自动把当前片库写入 KV
+- 此后线上站点优先读取 KV 中的片库数据
+
+### 推荐本地预览方式
+
+- 纯静态预览：直接双击 `index.html`
+- Cloudflare 管理预览：使用 `wrangler pages dev .`
+
 ## GitHub secrets
 
 - 不要把 `.dev.vars`、`.env*` 提交到仓库
@@ -68,7 +104,7 @@ window.FILM_VAULT_ADMIN = {
 
 ## 只让你自己使用搜索添加
 
-- 当前实现采用“本地私有维护”模式
-- `npm run add:movie -- 电影名` 只在你的本地终端运行，不会暴露给站点访客
-- 公开站点继续只读展示，不提供在线增删改入口
-- 如果以后你想要“线上也能只有你可添加”，建议在 Cloudflare 上额外给 `/admin` 路径加 Access 保护，再让后台接口用 GitHub Token 回写仓库
+- 当前实现采用“双轨维护”模式
+- 本地可直接双击打开并使用本地管理员模式
+- Cloudflare 上线后，只有通过管理员密码鉴权，才可以调用搜索和添加接口
+- 公开访客仍然只能浏览和搜索你已经看过的电影

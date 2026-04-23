@@ -3,7 +3,7 @@ const SOURCE_LIBRARY_URL = "./data/library.json";
 const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/";
 const MOVIE_DB_BASE_URL = "https://api.themoviedb.org/3";
 const BROWSER_REQUEST_INTERVAL_MS = 120;
-const STORAGE_KEY = "film-vault.local-draft.v1";
+const STORAGE_KEY = "film-vault.local-draft.v2";
 
 let lastBrowserRequestAt = 0;
 
@@ -21,10 +21,11 @@ const state = {
   activeGenre: "all",
   featuredMovieId: null,
   admin: {
-    enabled: false,
-    canSearch: false,
+    mode: "none",
     apiKey: "",
-    protocol: window.location.protocol,
+    remoteAvailable: false,
+    remoteAuthenticated: false,
+    remoteSeeded: false,
   },
 };
 
@@ -33,6 +34,8 @@ const elements = {
   pageSubtitle: document.getElementById("pageSubtitle"),
   statusCopy: document.getElementById("statusCopy"),
   adminActions: document.getElementById("adminActions"),
+  adminLoginButton: document.getElementById("adminLoginButton"),
+  adminLogoutButton: document.getElementById("adminLogoutButton"),
   movieWall: document.getElementById("movieWall"),
   resultsMeta: document.getElementById("resultsMeta"),
   statCount: document.getElementById("statCount"),
@@ -62,39 +65,32 @@ const elements = {
   tmdbSearchForm: document.getElementById("tmdbSearchForm"),
   tmdbSearchInput: document.getElementById("tmdbSearchInput"),
   searchResults: document.getElementById("searchResults"),
+  loginModal: document.getElementById("loginModal"),
+  closeLoginModal: document.getElementById("closeLoginModal"),
+  adminLoginForm: document.getElementById("adminLoginForm"),
+  adminPasswordInput: document.getElementById("adminPasswordInput"),
+  loginMessage: document.getElementById("loginMessage"),
   toast: document.getElementById("toast"),
 };
 
 document.addEventListener("DOMContentLoaded", init);
 
-function init() {
-  configureAdminMode();
+async function init() {
+  configureLocalAdminMode();
   bindEvents();
-  bootstrapLibrary();
+  await bootstrapLibrary();
 }
 
-function configureAdminMode() {
+function configureLocalAdminMode() {
   const config = window.FILM_VAULT_ADMIN || {};
-  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
   const isLocalFile = window.location.protocol === "file:";
-  const isLocalContext = isLocalHost || isLocalFile;
 
-  state.admin.enabled = isLocalContext;
-  state.admin.apiKey = String(config.apiKey || "").trim();
-  state.admin.canSearch = isLocalContext && Boolean(state.admin.apiKey);
-
-  if (state.admin.canSearch) {
-    elements.adminActions.hidden = false;
-    elements.statusCopy.textContent = "当前是本地维护模式。你可以直接搜索添加电影，结果只保存在本地草稿，导出后再替换 data 文件即可。";
-    return;
+  if (isLocalFile && config.apiKey) {
+    state.admin.mode = "local";
+    state.admin.apiKey = String(config.apiKey).trim();
   }
 
-  if (state.admin.enabled) {
-    elements.statusCopy.textContent = "当前是本地打开模式，片库可正常读取；若要启用页面内搜索添加，请在根目录放置未提交的 admin.local.js。";
-    return;
-  }
-
-  elements.statusCopy.textContent = "站点为只读展厅。更新片单时，使用本地维护模式导出 data 文件后再重新部署。";
+  updateAdminUi();
 }
 
 function bindEvents() {
@@ -108,39 +104,40 @@ function bindEvents() {
   elements.heroShuffleButton.addEventListener("click", shuffleFeaturedMovie);
   elements.closeDetail.addEventListener("click", closeDetailDrawer);
 
-  if (elements.openSearch) {
-    elements.openSearch.addEventListener("click", () => openModal(elements.searchModal));
-  }
-  if (elements.closeSearchModal) {
-    elements.closeSearchModal.addEventListener("click", () => closeModal(elements.searchModal));
-  }
-  if (elements.exportSource) {
-    elements.exportSource.addEventListener("click", exportSourceLibrary);
-  }
-  if (elements.exportResolved) {
-    elements.exportResolved.addEventListener("click", exportResolvedLibrary);
-  }
-  if (elements.tmdbSearchForm) {
-    elements.tmdbSearchForm.addEventListener("submit", handleSearchSubmit);
-  }
-  if (elements.searchModal) {
-    elements.searchModal.addEventListener("click", (event) => {
-      if (event.target === elements.searchModal) {
-        closeModal(elements.searchModal);
+  elements.openSearch?.addEventListener("click", () => {
+    syncSearchModalCopy();
+    openModal(elements.searchModal);
+  });
+  elements.closeSearchModal?.addEventListener("click", () => closeModal(elements.searchModal));
+  elements.exportSource?.addEventListener("click", exportSourceLibrary);
+  elements.exportResolved?.addEventListener("click", exportResolvedLibrary);
+  elements.tmdbSearchForm?.addEventListener("submit", handleSearchSubmit);
+
+  elements.adminLoginButton?.addEventListener("click", () => openModal(elements.loginModal));
+  elements.adminLogoutButton?.addEventListener("click", handleRemoteLogout);
+  elements.closeLoginModal?.addEventListener("click", () => closeModal(elements.loginModal));
+  elements.adminLoginForm?.addEventListener("submit", handleRemoteLogin);
+
+  [elements.searchModal, elements.loginModal].forEach((modal) => {
+    modal?.addEventListener("click", (event) => {
+      if (event.target === modal) {
+        closeModal(modal);
       }
     });
-  }
+  });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeDetailDrawer();
       closeModal(elements.searchModal);
+      closeModal(elements.loginModal);
     }
   });
 }
 
 async function bootstrapLibrary() {
   renderLoadingWall();
+  await initializeRemoteAdmin();
 
   try {
     const [sourceLibrary, resolvedLibrary] = await Promise.all([
@@ -150,7 +147,10 @@ async function bootstrapLibrary() {
 
     state.sourceLibrary = sourceLibrary;
     state.library = resolvedLibrary;
-    applyLocalDraft();
+
+    if (state.admin.mode === "local") {
+      applyLocalDraft();
+    }
 
     elements.pageTitle.textContent = state.library.title;
     elements.pageSubtitle.textContent = state.library.subtitle;
@@ -162,17 +162,93 @@ async function bootstrapLibrary() {
     renderLibrary();
   } catch (error) {
     console.error(error);
-    elements.resultsMeta.textContent = "片库数据加载失败，请检查 data 文件是否存在。";
+    elements.resultsMeta.textContent = "片库数据加载失败，请检查 data 文件或远程配置。";
     elements.movieWall.innerHTML = `
       <div class="empty-state">
-        未读取到片库数据。现在支持直接双击打开，但需要确保 <code>data/library.resolved.js</code> 存在。
+        未读取到片库数据。若本地双击打开，请确认 <code>data/library.resolved.js</code> 存在；
+        若要部署到 Cloudflare，请先配置 KV 与管理员密钥。
       </div>
     `;
-    showToast("未读取到静态片库数据。");
+    showToast("未读取到片库数据。");
   }
 }
 
+async function initializeRemoteAdmin() {
+  if (!/^https?:$/.test(window.location.protocol)) {
+    updateAdminUi();
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/admin/session", {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
+
+    if (!response.ok) {
+      updateAdminUi();
+      return;
+    }
+
+    const payload = await response.json();
+    state.admin.remoteAvailable = Boolean(payload.available);
+    state.admin.remoteAuthenticated = Boolean(payload.authenticated);
+    state.admin.remoteSeeded = Boolean(payload.seeded);
+
+    if (state.admin.remoteAuthenticated) {
+      state.admin.mode = "remote";
+    } else if (state.admin.mode !== "local") {
+      state.admin.mode = "none";
+    }
+  } catch (error) {
+    console.warn("远程管理接口不可用，继续使用静态预览模式。", error);
+  }
+
+  updateAdminUi();
+}
+
+function updateAdminUi() {
+  const isLocalAdmin = state.admin.mode === "local";
+  const isRemoteAdmin = state.admin.mode === "remote" && state.admin.remoteAuthenticated;
+  const canManage = isLocalAdmin || isRemoteAdmin;
+
+  elements.adminActions.hidden = !canManage;
+  elements.adminLoginButton.hidden = !(state.admin.remoteAvailable && !state.admin.remoteAuthenticated);
+  elements.adminLogoutButton.hidden = !(state.admin.remoteAvailable && state.admin.remoteAuthenticated);
+
+  if (isLocalAdmin) {
+    elements.statusCopy.textContent = "当前是本地维护模式。你可以直接搜索添加电影，结果会保存在浏览器本地草稿，并可导出新的片库文件。";
+    return;
+  }
+
+  if (isRemoteAdmin) {
+    elements.statusCopy.textContent = "当前已通过管理员鉴权。你现在可以在页面内搜索添加电影，数据会保存到 Cloudflare KV。";
+    return;
+  }
+
+  if (state.admin.remoteAvailable) {
+    elements.statusCopy.textContent = "当前是公开只读模式。点击“管理员登录”后，才可以搜索并添加你看过的电影。";
+    return;
+  }
+
+  elements.statusCopy.textContent = "当前是只读预览模式。若要本地页面内维护，请双击打开 index.html 并保留未提交的 admin.local.js；若要部署到 Cloudflare，请配置管理员鉴权接口。";
+}
+
 async function loadResolvedLibrary() {
+  if (/^https?:$/.test(window.location.protocol)) {
+    try {
+      const response = await fetch("/api/library", { headers: { "Cache-Control": "no-store" } });
+      if (response.ok) {
+        return normalizeResolvedLibrary(await response.json());
+      }
+    } catch (error) {
+      console.warn("远程片库读取失败，尝试静态回退。", error);
+    }
+  }
+
   const embedded = window.__FILM_VAULT_RESOLVED__;
   if (embedded?.movies) {
     return normalizeResolvedLibrary(embedded);
@@ -221,10 +297,6 @@ function normalizeSourceLibrary(data) {
 }
 
 function applyLocalDraft() {
-  if (!state.admin.enabled) {
-    return;
-  }
-
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
@@ -242,7 +314,7 @@ function applyLocalDraft() {
 }
 
 function persistLocalDraft() {
-  if (!state.admin.enabled) {
+  if (state.admin.mode !== "local") {
     return;
   }
 
@@ -526,8 +598,8 @@ async function openDetail(movieId) {
     ? `url('${getImageUrl(detail.backdrop_path || detail.poster_path, "w1280")}')`
     : "linear-gradient(135deg, rgba(255, 122, 24, 0.18), rgba(212, 57, 62, 0.2), rgba(10, 14, 20, 0.96))";
 
-  const removeAction = state.admin.canSearch
-    ? `<button class="movie-action danger-button" data-remove-movie="${detail.id}">从草稿移除</button>`
+  const localRemoveAction = state.admin.mode === "local"
+    ? `<button class="movie-action danger-button" data-remove-movie="${detail.id}">从本地草稿移除</button>`
     : "";
 
   elements.detailContent.innerHTML = `
@@ -583,10 +655,10 @@ async function openDetail(movieId) {
       </section>
 
       <section class="detail-block">
-        <h4>展厅说明</h4>
+        <h4>维护方式</h4>
         <div class="detail-actions">
           <button class="movie-action" data-close-detail>返回电影墙</button>
-          ${removeAction}
+          ${localRemoveAction}
         </div>
       </section>
     </div>
@@ -611,11 +683,84 @@ function removeMovie(movieId) {
   showToast("已从本地草稿移除。");
 }
 
+async function handleRemoteLogin(event) {
+  event.preventDefault();
+  const password = elements.adminPasswordInput.value.trim();
+
+  if (!password) {
+    elements.loginMessage.innerHTML = `<div class="empty-state">请输入管理员密码。</div>`;
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/admin/session", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+
+    if (!response.ok) {
+      elements.loginMessage.innerHTML = `<div class="empty-state">登录失败，请检查密码。</div>`;
+      return;
+    }
+
+    const payload = await response.json();
+    state.admin.remoteAvailable = true;
+    state.admin.remoteAuthenticated = true;
+    state.admin.remoteSeeded = Boolean(payload.seeded);
+    state.admin.mode = "remote";
+    elements.adminPasswordInput.value = "";
+    elements.loginMessage.innerHTML = "";
+    updateAdminUi();
+    closeModal(elements.loginModal);
+    showToast("管理员登录成功。");
+  } catch (error) {
+    console.error(error);
+    elements.loginMessage.innerHTML = `<div class="empty-state">登录接口不可用，请检查 Cloudflare 配置。</div>`;
+  }
+}
+
+async function handleRemoteLogout() {
+  try {
+    await fetch("/api/admin/session", {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+
+  state.admin.remoteAuthenticated = false;
+  state.admin.mode = "none";
+  updateAdminUi();
+  showToast("已退出管理员模式。");
+}
+
+function syncSearchModalCopy() {
+  const title = elements.searchModal.querySelector(".section-kicker");
+  const heading = elements.searchModal.querySelector("h3");
+  const copy = elements.searchModal.querySelector(".modal-copy");
+
+  if (state.admin.mode === "remote") {
+    title.textContent = "CLOUDFLARE ADMIN";
+    heading.textContent = "搜索电影并加入云端片库";
+    copy.textContent = "当前为 Cloudflare 管理模式。添加后会立即写入受保护的片库存储。";
+    return;
+  }
+
+  title.textContent = "LOCAL ADMIN";
+  heading.textContent = "搜索电影并加入本地草稿";
+  copy.textContent = "仅在本地启用。添加后会保存在浏览器草稿中，你可以再导出新的片单文件。";
+}
+
 async function handleSearchSubmit(event) {
   event.preventDefault();
 
-  if (!state.admin.canSearch) {
-    showToast("当前环境未启用本地搜索添加。");
+  if (state.admin.mode !== "local" && state.admin.mode !== "remote") {
+    showToast("请先完成管理员登录。");
     return;
   }
 
@@ -628,18 +773,51 @@ async function handleSearchSubmit(event) {
   elements.searchResults.innerHTML = createLoadingSearchCards(3);
 
   try {
-    const result = await fetchFromMovieDb("/search/movie", {
-      language: "zh-CN",
-      query,
-      include_adult: "false",
-      page: "1",
-    });
+    const results = state.admin.mode === "remote"
+      ? await remoteSearchMovies(query)
+      : await localSearchMovies(query);
 
-    renderSearchResults(result.results || []);
+    renderSearchResults(results);
   } catch (error) {
     console.error(error);
     elements.searchResults.innerHTML = `<div class="empty-state">搜索失败，请稍后重试。</div>`;
   }
+}
+
+async function remoteSearchMovies(query) {
+  const response = await fetch("/api/admin/search", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query }),
+  });
+
+  if (response.status === 401) {
+    state.admin.remoteAuthenticated = false;
+    state.admin.mode = "none";
+    updateAdminUi();
+    throw new Error("管理员会话已失效");
+  }
+
+  if (!response.ok) {
+    throw new Error(`搜索失败: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  return payload.results || [];
+}
+
+async function localSearchMovies(query) {
+  const payload = await fetchFromMovieDb("/search/movie", {
+    language: "zh-CN",
+    query,
+    include_adult: "false",
+    page: "1",
+  });
+
+  return payload.results || [];
 }
 
 function renderSearchResults(results) {
@@ -662,7 +840,7 @@ function renderSearchResults(results) {
             <h4>${escapeHtml(movie.title)} <span class="muted">${formatYear(movie.release_date)}</span></h4>
             <p>${escapeHtml(truncate(movie.overview || "暂无简介。", 100))}</p>
           </div>
-          <button class="search-result-button" data-add-movie="${movie.id}">加入草稿</button>
+          <button class="search-result-button" data-add-movie="${movie.id}">加入片库</button>
         </article>
       `;
     })
@@ -675,37 +853,75 @@ function renderSearchResults(results) {
 
 async function addMovieById(movieId) {
   if (state.library.movies.some((movie) => movie.id === movieId)) {
-    showToast("这部电影已经在当前草稿里了。");
+    showToast("这部电影已经在当前片库里了。");
     return;
   }
 
   try {
-    const detail = await fetchFromMovieDb(`/movie/${movieId}`, {
-      language: "zh-CN",
-      append_to_response: "credits,release_dates",
-    });
+    if (state.admin.mode === "remote") {
+      await addMovieRemotely(movieId);
+    } else {
+      await addMovieLocally(movieId);
+    }
 
-    const transformed = transformMovie(detail, state.library.movies.length);
-
-    state.library.movies.push(transformed);
-    state.sourceLibrary.entries.push({
-      title: detail.title,
-      year: Number(detail.release_date?.slice(0, 4)) || undefined,
-      tmdbId: detail.id,
-    });
-
-    persistLocalDraft();
     buildRegionOptions();
     renderGenreChips();
     updateStats();
     renderLibrary();
-    updateFeaturedMovie(detail.id);
+    updateFeaturedMovie(movieId);
     closeModal(elements.searchModal);
-    showToast("已加入本地草稿，可导出新的 data 文件。");
+    showToast(state.admin.mode === "remote" ? "已写入云端片库。" : "已加入本地草稿，可导出新的 data 文件。");
   } catch (error) {
     console.error(error);
     showToast("添加失败，请稍后重试。");
   }
+}
+
+async function addMovieLocally(movieId) {
+  const detail = await fetchFromMovieDb(`/movie/${movieId}`, {
+    language: "zh-CN",
+    append_to_response: "credits,release_dates",
+  });
+
+  state.library.movies.push(transformMovie(detail, state.library.movies.length));
+  state.sourceLibrary.entries.push({
+    title: detail.title,
+    year: Number(detail.release_date?.slice(0, 4)) || undefined,
+    tmdbId: detail.id,
+  });
+
+  persistLocalDraft();
+}
+
+async function addMovieRemotely(movieId) {
+  const response = await fetch("/api/admin/add", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      movieId,
+      sourceLibrary: state.admin.remoteSeeded ? undefined : state.sourceLibrary,
+      resolvedLibrary: state.admin.remoteSeeded ? undefined : state.library,
+    }),
+  });
+
+  if (response.status === 401) {
+    state.admin.remoteAuthenticated = false;
+    state.admin.mode = "none";
+    updateAdminUi();
+    throw new Error("管理员会话已失效");
+  }
+
+  if (!response.ok) {
+    throw new Error(`远程添加失败: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  state.sourceLibrary = normalizeSourceLibrary(payload.sourceLibrary);
+  state.library = normalizeResolvedLibrary(payload.library);
+  state.admin.remoteSeeded = true;
 }
 
 function exportSourceLibrary() {
@@ -811,7 +1027,13 @@ function getReleaseCountry(detail) {
 }
 
 function createLoadingSearchCards(count) {
-  return Array.from({ length: count }, () => `<div class="search-card"><div class="movie-card loading"></div></div>`).join("");
+  return Array.from({ length: count }, () => `
+    <div class="search-card">
+      <div class="search-fallback">...</div>
+      <div><p>正在搜索中...</p></div>
+      <div></div>
+    </div>
+  `).join("");
 }
 
 function openDrawer() {
@@ -823,14 +1045,14 @@ function openDrawer() {
 function closeDetailDrawer() {
   elements.detailDrawer.classList.remove("open");
   elements.detailDrawer.setAttribute("aria-hidden", "true");
-  if (!elements.searchModal.classList.contains("open")) {
+  if (!elements.searchModal.classList.contains("open") && !elements.loginModal.classList.contains("open")) {
     document.body.style.overflow = "";
   }
 }
 
 function openModal(modal) {
-  modal.classList.add("open");
-  modal.setAttribute("aria-hidden", "false");
+  modal?.classList.add("open");
+  modal?.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
 }
 
@@ -841,7 +1063,7 @@ function closeModal(modal) {
 
   modal.classList.remove("open");
   modal.setAttribute("aria-hidden", "true");
-  if (!elements.detailDrawer.classList.contains("open")) {
+  if (!elements.detailDrawer.classList.contains("open") && !elements.searchModal.classList.contains("open") && !elements.loginModal.classList.contains("open")) {
     document.body.style.overflow = "";
   }
 }

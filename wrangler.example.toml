@@ -1,0 +1,9 @@
+name = "films"
+compatibility_date = "2026-04-23"
+
+pages_build_output_dir = "."
+
+[[kv_namespaces]]
+binding = "FILM_VAULT_KV"
+id = "replace-with-your-kv-namespace-id"
+preview_id = "replace-with-your-preview-kv-namespace-id"
