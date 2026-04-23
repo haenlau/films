@@ -38,11 +38,10 @@ const elements = {
   pageTitle: document.getElementById("pageTitle"),
   pageSubtitle: document.getElementById("pageSubtitle"),
   statusCopy: document.getElementById("statusCopy"),
+  authActionButton: document.getElementById("authActionButton"),
   userHub: document.getElementById("userHub"),
   userMenu: document.getElementById("userMenu"),
   userMenuButton: document.getElementById("userMenuButton"),
-  adminLoginButton: document.getElementById("adminLoginButton"),
-  adminLogoutButton: document.getElementById("adminLogoutButton"),
   openSearch: document.getElementById("openSearch"),
   exportSource: document.getElementById("exportSource"),
   exportResolved: document.getElementById("exportResolved"),
@@ -117,6 +116,18 @@ function bindEvents() {
     event.stopPropagation();
     setUserMenuOpen(!state.admin.menuOpen);
   });
+  elements.authActionButton?.addEventListener("click", () => {
+    if (state.admin.mode === "local" && state.admin.localAuthenticated) {
+      handleRemoteLogout();
+      return;
+    }
+    if (state.admin.mode === "remote" && state.admin.remoteAuthenticated) {
+      handleRemoteLogout();
+      return;
+    }
+    syncLoginModalCopy();
+    openModal(elements.loginModal);
+  });
 
   elements.openSearch?.addEventListener("click", () => {
     syncSearchModalCopy();
@@ -131,13 +142,6 @@ function bindEvents() {
     exportResolvedLibrary();
     setUserMenuOpen(false);
   });
-  elements.adminLoginButton?.addEventListener("click", () => {
-    setUserMenuOpen(false);
-    syncLoginModalCopy();
-    openModal(elements.loginModal);
-  });
-  elements.adminLogoutButton?.addEventListener("click", handleRemoteLogout);
-
   elements.closeSearchModal?.addEventListener("click", () => closeModal(elements.searchModal));
   elements.closeLoginModal?.addEventListener("click", () => closeModal(elements.loginModal));
   elements.tmdbSearchForm?.addEventListener("submit", handleSearchSubmit);
@@ -247,27 +251,38 @@ function updateAdminUi() {
   const canAttemptRemoteLogin = !state.admin.localAvailable && /^https?:$/.test(window.location.protocol);
   const canManage = isLocalAdmin || isRemoteAdmin;
 
+  elements.userHub.hidden = !canManage;
   elements.openSearch.hidden = !canManage;
   elements.exportSource.hidden = !isLocalAdmin;
   elements.exportResolved.hidden = !isLocalAdmin;
-  elements.adminLoginButton.hidden = !(canAttemptLocalLogin || (canAttemptRemoteLogin && !state.admin.remoteAuthenticated));
-  elements.adminLogoutButton.hidden = !canManage;
-
   elements.userMenuButton.textContent = "控制台";
 
   if (isLocalAdmin) {
-    elements.adminLogoutButton.textContent = "退出登录";
+    elements.authActionButton.hidden = false;
+    elements.authActionButton.textContent = "退出登录";
+    elements.authActionButton.classList.remove("primary-button");
+    elements.authActionButton.classList.add("ghost-button");
     elements.statusCopy.textContent = "本地管理员模式已启用。你可以搜索添加电影，也可以导出新的片库文件。";
   } else if (isRemoteAdmin) {
-    elements.adminLogoutButton.textContent = "退出登录";
+    elements.authActionButton.hidden = false;
+    elements.authActionButton.textContent = "退出登录";
+    elements.authActionButton.classList.remove("primary-button");
+    elements.authActionButton.classList.add("ghost-button");
     elements.statusCopy.textContent = "你已进入管理员模式。现在可以搜索添加电影，或在搜索结果里删除已存在的电影，变更会直接写入 Cloudflare KV。";
   } else if (canAttemptLocalLogin) {
-    elements.adminLoginButton.textContent = "登录管理";
+    elements.authActionButton.hidden = false;
+    elements.authActionButton.textContent = "登录管理";
+    elements.authActionButton.classList.remove("ghost-button");
+    elements.authActionButton.classList.add("primary-button");
     elements.statusCopy.textContent = "当前是本地预览模式。登录后可以进入管理状态，搜索添加或导出片库。";
   } else if (canAttemptRemoteLogin) {
-    elements.adminLoginButton.textContent = "管理员登录";
+    elements.authActionButton.hidden = false;
+    elements.authActionButton.textContent = "管理员登录";
+    elements.authActionButton.classList.remove("ghost-button");
+    elements.authActionButton.classList.add("primary-button");
     elements.statusCopy.textContent = "公开访客只能浏览和搜索已添加电影。登录后，才可以搜索添加或删除片库内容。";
   } else {
+    elements.authActionButton.hidden = true;
     elements.statusCopy.textContent = "当前是本地只读预览模式。公开搜索始终可用；若要页面内维护，请使用本地管理员模式或部署 Cloudflare 后登录。";
   }
 }

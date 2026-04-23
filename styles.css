@@ -29,6 +29,7 @@ body {
   min-height: 100vh;
   font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--text);
+  color-scheme: dark;
   background:
     radial-gradient(circle at top left, rgba(255, 126, 30, 0.16), transparent 34%),
     radial-gradient(circle at 80% 18%, rgba(213, 37, 49, 0.14), transparent 28%),
@@ -54,7 +55,7 @@ img {
 
 .app-shell {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   padding: 28px 28px 48px;
 }
 
@@ -148,7 +149,19 @@ img {
 
 .user-hub {
   position: relative;
-  width: min(340px, 100%);
+  width: auto;
+}
+
+.control-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.auth-button {
+  min-width: 128px;
 }
 
 .user-trigger {
@@ -176,6 +189,7 @@ img {
   pointer-events: none;
   transform: translateY(-8px);
   transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 20;
 }
 
 .user-menu.open {
@@ -439,6 +453,7 @@ textarea::placeholder {
 
 select {
   appearance: none;
+  color-scheme: dark;
   background-image:
     linear-gradient(45deg, transparent 50%, rgba(255, 255, 255, 0.76) 50%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.76) 50%, transparent 50%);
@@ -955,6 +970,11 @@ textarea {
 
   .user-hub {
     width: 100%;
+  }
+
+  .control-bar {
+    width: 100%;
+    justify-content: stretch;
   }
 
   .hero-panel,

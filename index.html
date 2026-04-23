@@ -31,15 +31,16 @@
         </p>
       </div>
 
-      <div class="user-hub" id="userHub">
-        <button class="ghost-button user-trigger" id="userMenuButton" aria-expanded="false">馆藏台</button>
-        <div class="user-menu panel" id="userMenu" aria-hidden="true">
-          <button class="user-menu-item" id="openSearch" hidden>搜索添加电影</button>
-          <button class="user-menu-item" id="exportSource" hidden>导出片单</button>
-          <button class="user-menu-item" id="exportResolved" hidden>导出完整数据</button>
-          <button class="user-menu-item" id="adminLoginButton" hidden>管理员登录</button>
-          <button class="user-menu-item danger-text" id="adminLogoutButton" hidden>退出登录</button>
-          <p class="user-menu-note" id="statusCopy">站点为只读展厅。未登录用户只能浏览与搜索你已添加的电影。</p>
+      <div class="control-bar">
+        <button class="primary-button auth-button" id="authActionButton">管理员登录</button>
+        <div class="user-hub" id="userHub" hidden>
+          <button class="ghost-button user-trigger" id="userMenuButton" aria-expanded="false">控制台</button>
+          <div class="user-menu panel" id="userMenu" aria-hidden="true">
+            <button class="user-menu-item" id="openSearch" hidden>搜索添加电影</button>
+            <button class="user-menu-item" id="exportSource" hidden>导出片单</button>
+            <button class="user-menu-item" id="exportResolved" hidden>导出完整数据</button>
+            <p class="user-menu-note" id="statusCopy">站点为只读展厅。未登录用户只能浏览与搜索你已添加的电影。</p>
+          </div>
         </div>
       </div>
     </header>
