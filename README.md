@@ -8,6 +8,14 @@
   主要维护电影名和年份；搜索脚本会自动补充可选 `tmdbId`，用于解决重名电影。
 - `data/library.resolved.json`
   给前端站点直接使用的静态数据，包含海报、简介、演员、评分等完整字段。
+- `data/library.source.js` / `data/library.resolved.js`
+  为了兼容直接双击 `index.html` 的本地打开方式，前端优先读取这两个静态 JS 数据文件。
+
+## 本地打开
+
+- 现在支持直接双击 `index.html`
+- 页面优先从 `data/library.source.js` 和 `data/library.resolved.js` 读取数据，所以不依赖本地 HTTP 服务
+- 每次执行重建脚本时，这两个文件会自动同步更新
 
 ## 本地维护
 
@@ -35,6 +43,22 @@ npm run rebuild:library
 - 前端页面只读取 `data/library.resolved.json`
 - 不在浏览器里暴露密钥
 - 兼容 Cloudflare Pages / Workers 静态部署
+
+## 页面内搜索添加
+
+- 页面内搜索添加只在本地环境启用，不会出现在公开部署站点
+- 根目录放一个不提交到 Git 的 `admin.local.js`
+- 示例文件见 `admin.local.example.js`
+
+```js
+window.FILM_VAULT_ADMIN = {
+  apiKey: "你的密钥"
+};
+```
+
+- 双击打开 `index.html` 后，右上角会出现“搜索添加 / 导出片单 / 导出完整数据”
+- 添加结果会先保存到浏览器本地草稿，并在刷新后保留
+- 你可以直接从页面导出新的 `library.json` 和 `library.resolved.json`
 
 ## GitHub secrets
 

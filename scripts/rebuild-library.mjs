@@ -1,5 +1,5 @@
 import { getMovieDetails, pickBestResult, searchMovies } from "./lib/movie-db.mjs";
-import { dedupeEntries, readSourceLibrary, writeResolvedLibrary } from "./lib/library-files.mjs";
+import { dedupeEntries, readSourceLibrary, writeResolvedLibrary, writeSourceLibrary } from "./lib/library-files.mjs";
 
 const source = await readSourceLibrary();
 const entries = dedupeEntries(source.entries);
@@ -19,6 +19,12 @@ for (const [index, entry] of entries.entries()) {
   movies.push(transformMovie(detail, index));
   console.log(`已解析 ${index + 1}/${entries.length}: ${detail.title} (${detail.release_date?.slice(0, 4) || "未知"})`);
 }
+
+await writeSourceLibrary({
+  title: source.title,
+  subtitle: source.subtitle,
+  entries,
+});
 
 await writeResolvedLibrary({
   title: source.title,

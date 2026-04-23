@@ -1,4 +1,11 @@
 const RESOLVED_LIBRARY_URL = "./data/library.resolved.json";
+const SOURCE_LIBRARY_URL = "./data/library.json";
+const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/";
+const MOVIE_DB_BASE_URL = "https://api.themoviedb.org/3";
+const BROWSER_REQUEST_INTERVAL_MS = 120;
+const STORAGE_KEY = "film-vault.local-draft.v1";
+
+let lastBrowserRequestAt = 0;
 
 const state = {
   library: {
@@ -6,13 +13,26 @@ const state = {
     subtitle: "一面为私人观影史准备的电影墙，用沉浸式视觉把每一次观看变成可回看的馆藏。",
     movies: [],
   },
+  sourceLibrary: {
+    title: "我的电影墙",
+    subtitle: "一面为私人观影史准备的电影墙，用沉浸式视觉把每一次观看变成可回看的馆藏。",
+    entries: [],
+  },
   activeGenre: "all",
   featuredMovieId: null,
+  admin: {
+    enabled: false,
+    canSearch: false,
+    apiKey: "",
+    protocol: window.location.protocol,
+  },
 };
 
 const elements = {
   pageTitle: document.getElementById("pageTitle"),
   pageSubtitle: document.getElementById("pageSubtitle"),
+  statusCopy: document.getElementById("statusCopy"),
+  adminActions: document.getElementById("adminActions"),
   movieWall: document.getElementById("movieWall"),
   resultsMeta: document.getElementById("resultsMeta"),
   statCount: document.getElementById("statCount"),
@@ -34,14 +54,47 @@ const elements = {
   detailDrawer: document.getElementById("detailDrawer"),
   detailContent: document.getElementById("detailContent"),
   closeDetail: document.getElementById("closeDetail"),
+  searchModal: document.getElementById("searchModal"),
+  closeSearchModal: document.getElementById("closeSearchModal"),
+  openSearch: document.getElementById("openSearch"),
+  exportSource: document.getElementById("exportSource"),
+  exportResolved: document.getElementById("exportResolved"),
+  tmdbSearchForm: document.getElementById("tmdbSearchForm"),
+  tmdbSearchInput: document.getElementById("tmdbSearchInput"),
+  searchResults: document.getElementById("searchResults"),
   toast: document.getElementById("toast"),
 };
 
 document.addEventListener("DOMContentLoaded", init);
 
 function init() {
+  configureAdminMode();
   bindEvents();
   bootstrapLibrary();
+}
+
+function configureAdminMode() {
+  const config = window.FILM_VAULT_ADMIN || {};
+  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const isLocalFile = window.location.protocol === "file:";
+  const isLocalContext = isLocalHost || isLocalFile;
+
+  state.admin.enabled = isLocalContext;
+  state.admin.apiKey = String(config.apiKey || "").trim();
+  state.admin.canSearch = isLocalContext && Boolean(state.admin.apiKey);
+
+  if (state.admin.canSearch) {
+    elements.adminActions.hidden = false;
+    elements.statusCopy.textContent = "当前是本地维护模式。你可以直接搜索添加电影，结果只保存在本地草稿，导出后再替换 data 文件即可。";
+    return;
+  }
+
+  if (state.admin.enabled) {
+    elements.statusCopy.textContent = "当前是本地打开模式，片库可正常读取；若要启用页面内搜索添加，请在根目录放置未提交的 admin.local.js。";
+    return;
+  }
+
+  elements.statusCopy.textContent = "站点为只读展厅。更新片单时，使用本地维护模式导出 data 文件后再重新部署。";
 }
 
 function bindEvents() {
@@ -55,9 +108,33 @@ function bindEvents() {
   elements.heroShuffleButton.addEventListener("click", shuffleFeaturedMovie);
   elements.closeDetail.addEventListener("click", closeDetailDrawer);
 
+  if (elements.openSearch) {
+    elements.openSearch.addEventListener("click", () => openModal(elements.searchModal));
+  }
+  if (elements.closeSearchModal) {
+    elements.closeSearchModal.addEventListener("click", () => closeModal(elements.searchModal));
+  }
+  if (elements.exportSource) {
+    elements.exportSource.addEventListener("click", exportSourceLibrary);
+  }
+  if (elements.exportResolved) {
+    elements.exportResolved.addEventListener("click", exportResolvedLibrary);
+  }
+  if (elements.tmdbSearchForm) {
+    elements.tmdbSearchForm.addEventListener("submit", handleSearchSubmit);
+  }
+  if (elements.searchModal) {
+    elements.searchModal.addEventListener("click", (event) => {
+      if (event.target === elements.searchModal) {
+        closeModal(elements.searchModal);
+      }
+    });
+  }
+
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeDetailDrawer();
+      closeModal(elements.searchModal);
     }
   });
 }
@@ -66,9 +143,18 @@ async function bootstrapLibrary() {
   renderLoadingWall();
 
   try {
-    state.library = await loadResolvedLibrary();
+    const [sourceLibrary, resolvedLibrary] = await Promise.all([
+      loadSourceLibrary(),
+      loadResolvedLibrary(),
+    ]);
+
+    state.sourceLibrary = sourceLibrary;
+    state.library = resolvedLibrary;
+    applyLocalDraft();
+
     elements.pageTitle.textContent = state.library.title;
     elements.pageSubtitle.textContent = state.library.subtitle;
+
     buildRegionOptions();
     renderGenreChips();
     updateStats();
@@ -76,10 +162,10 @@ async function bootstrapLibrary() {
     renderLibrary();
   } catch (error) {
     console.error(error);
-    elements.resultsMeta.textContent = "片库数据加载失败，请先生成 data/library.resolved.json。";
+    elements.resultsMeta.textContent = "片库数据加载失败，请检查 data 文件是否存在。";
     elements.movieWall.innerHTML = `
       <div class="empty-state">
-        片库数据尚未准备完成。请先在本地运行 <code>npm run rebuild:library</code> 生成静态数据。
+        未读取到片库数据。现在支持直接双击打开，但需要确保 <code>data/library.resolved.js</code> 存在。
       </div>
     `;
     showToast("未读取到静态片库数据。");
@@ -87,18 +173,86 @@ async function bootstrapLibrary() {
 }
 
 async function loadResolvedLibrary() {
-  const response = await fetch(RESOLVED_LIBRARY_URL, { cache: "no-store" });
+  const embedded = window.__FILM_VAULT_RESOLVED__;
+  if (embedded?.movies) {
+    return normalizeResolvedLibrary(embedded);
+  }
 
+  const response = await fetch(RESOLVED_LIBRARY_URL, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`片库静态数据读取失败: ${response.status}`);
   }
 
-  const data = await response.json();
+  return normalizeResolvedLibrary(await response.json());
+}
+
+async function loadSourceLibrary() {
+  const embedded = window.__FILM_VAULT_SOURCE__;
+  if (embedded?.entries) {
+    return normalizeSourceLibrary(embedded);
+  }
+
+  const response = await fetch(SOURCE_LIBRARY_URL, { cache: "no-store" });
+  if (!response.ok) {
+    return normalizeSourceLibrary({
+      title: state.library.title,
+      subtitle: state.library.subtitle,
+      entries: [],
+    });
+  }
+
+  return normalizeSourceLibrary(await response.json());
+}
+
+function normalizeResolvedLibrary(data) {
   return {
     title: data.title || "我的电影墙",
     subtitle: data.subtitle || "",
     movies: Array.isArray(data.movies) ? data.movies : [],
   };
+}
+
+function normalizeSourceLibrary(data) {
+  return {
+    title: data.title || "我的电影墙",
+    subtitle: data.subtitle || "",
+    entries: Array.isArray(data.entries) ? data.entries : [],
+  };
+}
+
+function applyLocalDraft() {
+  if (!state.admin.enabled) {
+    return;
+  }
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    const draft = JSON.parse(raw);
+    if (draft?.sourceLibrary?.entries && draft?.library?.movies) {
+      state.sourceLibrary = normalizeSourceLibrary(draft.sourceLibrary);
+      state.library = normalizeResolvedLibrary(draft.library);
+    }
+  } catch (error) {
+    console.warn("读取本地草稿失败", error);
+  }
+}
+
+function persistLocalDraft() {
+  if (!state.admin.enabled) {
+    return;
+  }
+
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      sourceLibrary: state.sourceLibrary,
+      library: state.library,
+    })
+  );
 }
 
 function renderLibrary() {
@@ -372,6 +526,10 @@ async function openDetail(movieId) {
     ? `url('${getImageUrl(detail.backdrop_path || detail.poster_path, "w1280")}')`
     : "linear-gradient(135deg, rgba(255, 122, 24, 0.18), rgba(212, 57, 62, 0.2), rgba(10, 14, 20, 0.96))";
 
+  const removeAction = state.admin.canSearch
+    ? `<button class="movie-action danger-button" data-remove-movie="${detail.id}">从草稿移除</button>`
+    : "";
+
   elements.detailContent.innerHTML = `
     <section class="detail-hero" style="background-image: ${detailHeroBackground}">
       <div class="detail-hero-content">
@@ -426,14 +584,234 @@ async function openDetail(movieId) {
 
       <section class="detail-block">
         <h4>展厅说明</h4>
-        <div class="detail-list">
-          <div class="detail-row"><span>站点模式</span><strong>公开只读</strong></div>
-          <div class="detail-row"><span>维护方式</span><strong>本地搜索添加后重新部署</strong></div>
-          <div class="detail-row"><span>兼容部署</span><strong>Cloudflare Pages / Workers</strong></div>
+        <div class="detail-actions">
+          <button class="movie-action" data-close-detail>返回电影墙</button>
+          ${removeAction}
         </div>
       </section>
     </div>
   `;
+
+  elements.detailContent.querySelector("[data-close-detail]")?.addEventListener("click", closeDetailDrawer);
+  elements.detailContent.querySelector("[data-remove-movie]")?.addEventListener("click", () => removeMovie(detail.id));
+}
+
+function removeMovie(movieId) {
+  state.library.movies = state.library.movies
+    .filter((movie) => movie.id !== movieId)
+    .map((movie, index) => ({ ...movie, order: index }));
+  state.sourceLibrary.entries = state.sourceLibrary.entries.filter((entry) => Number(entry.tmdbId) !== movieId);
+
+  persistLocalDraft();
+  buildRegionOptions();
+  renderGenreChips();
+  updateStats();
+  renderLibrary();
+  closeDetailDrawer();
+  showToast("已从本地草稿移除。");
+}
+
+async function handleSearchSubmit(event) {
+  event.preventDefault();
+
+  if (!state.admin.canSearch) {
+    showToast("当前环境未启用本地搜索添加。");
+    return;
+  }
+
+  const query = elements.tmdbSearchInput.value.trim();
+  if (!query) {
+    showToast("先输入电影名再搜索。");
+    return;
+  }
+
+  elements.searchResults.innerHTML = createLoadingSearchCards(3);
+
+  try {
+    const result = await fetchFromMovieDb("/search/movie", {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: "1",
+    });
+
+    renderSearchResults(result.results || []);
+  } catch (error) {
+    console.error(error);
+    elements.searchResults.innerHTML = `<div class="empty-state">搜索失败，请稍后重试。</div>`;
+  }
+}
+
+function renderSearchResults(results) {
+  if (!results.length) {
+    elements.searchResults.innerHTML = `<div class="empty-state">没有找到匹配结果，换个中英文片名试试。</div>`;
+    return;
+  }
+
+  elements.searchResults.innerHTML = results
+    .slice(0, 10)
+    .map((movie) => {
+      const poster = movie.poster_path
+        ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" />`
+        : `<div class="search-fallback">NO POSTER</div>`;
+
+      return `
+        <article class="search-card">
+          ${poster}
+          <div>
+            <h4>${escapeHtml(movie.title)} <span class="muted">${formatYear(movie.release_date)}</span></h4>
+            <p>${escapeHtml(truncate(movie.overview || "暂无简介。", 100))}</p>
+          </div>
+          <button class="search-result-button" data-add-movie="${movie.id}">加入草稿</button>
+        </article>
+      `;
+    })
+    .join("");
+
+  elements.searchResults.querySelectorAll("[data-add-movie]").forEach((button) => {
+    button.addEventListener("click", () => addMovieById(Number(button.dataset.addMovie)));
+  });
+}
+
+async function addMovieById(movieId) {
+  if (state.library.movies.some((movie) => movie.id === movieId)) {
+    showToast("这部电影已经在当前草稿里了。");
+    return;
+  }
+
+  try {
+    const detail = await fetchFromMovieDb(`/movie/${movieId}`, {
+      language: "zh-CN",
+      append_to_response: "credits,release_dates",
+    });
+
+    const transformed = transformMovie(detail, state.library.movies.length);
+
+    state.library.movies.push(transformed);
+    state.sourceLibrary.entries.push({
+      title: detail.title,
+      year: Number(detail.release_date?.slice(0, 4)) || undefined,
+      tmdbId: detail.id,
+    });
+
+    persistLocalDraft();
+    buildRegionOptions();
+    renderGenreChips();
+    updateStats();
+    renderLibrary();
+    updateFeaturedMovie(detail.id);
+    closeModal(elements.searchModal);
+    showToast("已加入本地草稿，可导出新的 data 文件。");
+  } catch (error) {
+    console.error(error);
+    showToast("添加失败，请稍后重试。");
+  }
+}
+
+function exportSourceLibrary() {
+  downloadJson(
+    "library.json",
+    {
+      title: state.sourceLibrary.title,
+      subtitle: state.sourceLibrary.subtitle,
+      entries: state.sourceLibrary.entries,
+    }
+  );
+  showToast("已导出 library.json。");
+}
+
+function exportResolvedLibrary() {
+  downloadJson(
+    "library.resolved.json",
+    {
+      title: state.library.title,
+      subtitle: state.library.subtitle,
+      movies: state.library.movies,
+    }
+  );
+  showToast("已导出 library.resolved.json。");
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function fetchFromMovieDb(path, params = {}) {
+  await throttleBrowserRequests();
+
+  const search = new URLSearchParams({
+    api_key: state.admin.apiKey,
+    ...params,
+  });
+  const response = await fetch(`${MOVIE_DB_BASE_URL}${path}?${search.toString()}`);
+
+  if (!response.ok) {
+    throw new Error(`电影资料请求失败: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function throttleBrowserRequests() {
+  const now = Date.now();
+  const waitTime = Math.max(0, BROWSER_REQUEST_INTERVAL_MS - (now - lastBrowserRequestAt));
+  if (waitTime > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitTime));
+  }
+
+  lastBrowserRequestAt = Date.now();
+}
+
+function transformMovie(detail, order) {
+  return {
+    id: detail.id,
+    order,
+    title: detail.title,
+    original_title: detail.original_title,
+    overview: detail.overview,
+    release_date: detail.release_date,
+    release_country: getReleaseCountry(detail),
+    poster_path: detail.poster_path,
+    backdrop_path: detail.backdrop_path,
+    vote_average: detail.vote_average,
+    vote_count: detail.vote_count,
+    runtime: detail.runtime,
+    popularity: detail.popularity,
+    genres: detail.genres || [],
+    production_countries: detail.production_countries || [],
+    production_companies: detail.production_companies || [],
+    spoken_languages: detail.spoken_languages || [],
+    cast: (detail.credits?.cast || []).slice(0, 10).map((person) => ({
+      name: person.name,
+      character: person.character,
+    })),
+  };
+}
+
+function getReleaseCountry(detail) {
+  const releaseResults = detail.release_dates?.results || [];
+  const preferred = releaseResults.find((item) => item.iso_3166_1 === "CN")
+    || releaseResults.find((item) => item.iso_3166_1 === "US")
+    || releaseResults[0];
+
+  if (!preferred) {
+    return "";
+  }
+
+  const country = (detail.production_countries || []).find((item) => item.iso_3166_1 === preferred.iso_3166_1);
+  return country?.name || preferred.iso_3166_1;
+}
+
+function createLoadingSearchCards(count) {
+  return Array.from({ length: count }, () => `<div class="search-card"><div class="movie-card loading"></div></div>`).join("");
 }
 
 function openDrawer() {
@@ -445,7 +823,27 @@ function openDrawer() {
 function closeDetailDrawer() {
   elements.detailDrawer.classList.remove("open");
   elements.detailDrawer.setAttribute("aria-hidden", "true");
-  document.body.style.overflow = "";
+  if (!elements.searchModal.classList.contains("open")) {
+    document.body.style.overflow = "";
+  }
+}
+
+function openModal(modal) {
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function closeModal(modal) {
+  if (!modal) {
+    return;
+  }
+
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+  if (!elements.detailDrawer.classList.contains("open")) {
+    document.body.style.overflow = "";
+  }
 }
 
 function getImageUrl(path, size = "w780") {
@@ -453,7 +851,7 @@ function getImageUrl(path, size = "w780") {
     return "";
   }
 
-  return `https://image.tmdb.org/t/p/${size}${path}`;
+  return `${IMAGE_BASE_URL}${size}${path}`;
 }
 
 function showToast(message) {
