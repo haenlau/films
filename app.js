@@ -21,6 +21,9 @@ const state = {
   activeGenre: "all",
   featuredMovieId: null,
   searchResults: [],
+  searchQuery: "",
+  searchPage: 1,
+  searchTotalPages: 1,
   admin: {
     mode: "none",
     apiKey: "",
@@ -71,6 +74,10 @@ const elements = {
   tmdbSearchForm: document.getElementById("tmdbSearchForm"),
   tmdbSearchInput: document.getElementById("tmdbSearchInput"),
   searchResults: document.getElementById("searchResults"),
+  searchPagination: document.getElementById("searchPagination"),
+  searchPrevPage: document.getElementById("searchPrevPage"),
+  searchNextPage: document.getElementById("searchNextPage"),
+  searchPageMeta: document.getElementById("searchPageMeta"),
   loginModal: document.getElementById("loginModal"),
   closeLoginModal: document.getElementById("closeLoginModal"),
   loginTitle: document.getElementById("loginTitle"),
@@ -143,6 +150,8 @@ function bindEvents() {
     setUserMenuOpen(false);
   });
   elements.closeSearchModal?.addEventListener("click", () => closeModal(elements.searchModal));
+  elements.searchPrevPage?.addEventListener("click", () => changeSearchPage(-1));
+  elements.searchNextPage?.addEventListener("click", () => changeSearchPage(1));
   elements.closeLoginModal?.addEventListener("click", () => closeModal(elements.loginModal));
   elements.tmdbSearchForm?.addEventListener("submit", handleSearchSubmit);
   elements.adminLoginForm?.addEventListener("submit", handleRemoteLogin);
@@ -843,25 +852,36 @@ async function handleSearchSubmit(event) {
     return;
   }
 
+  state.searchQuery = query;
+  state.searchPage = 1;
   elements.searchResults.innerHTML = createLoadingSearchCards(3);
+  elements.searchPagination.hidden = true;
 
   try {
-    state.searchResults = state.admin.mode === "remote"
-      ? await remoteSearchMovies(query)
-      : await localSearchMovies(query);
-    renderSearchResults();
+    await runSearch();
   } catch (error) {
     console.error(error);
     elements.searchResults.innerHTML = `<div class="empty-state">搜索失败，请稍后重试。</div>`;
   }
 }
 
-async function remoteSearchMovies(query) {
+async function runSearch() {
+  const payload = state.admin.mode === "remote"
+    ? await remoteSearchMovies(state.searchQuery, state.searchPage)
+    : await localSearchMovies(state.searchQuery, state.searchPage);
+
+  state.searchResults = payload.results || [];
+  state.searchTotalPages = Math.max(1, Number(payload.total_pages || 1));
+  renderSearchResults();
+  renderSearchPagination();
+}
+
+async function remoteSearchMovies(query, page = 1) {
   const response = await fetch("/api/admin/search", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, page }),
   });
 
   if (response.status === 401) {
@@ -876,45 +896,46 @@ async function remoteSearchMovies(query) {
   }
 
   const payload = await response.json();
-  return payload.results || [];
+  return {
+    results: payload.results || [],
+    total_pages: payload.total_pages || 1,
+  };
 }
 
-async function localSearchMovies(query) {
-  const [moviePayload, tvPayload] = await Promise.all([
-    fetchFromMovieDb("/search/movie", {
-      language: "zh-CN",
-      query,
-      include_adult: "false",
-      page: "1",
-    }),
-    fetchFromMovieDb("/search/tv", {
-      language: "zh-CN",
-      query,
-      include_adult: "false",
-      page: "1",
-    }),
-  ]);
+async function localSearchMovies(query, page = 1) {
+  const payload = await fetchFromMovieDb("/search/multi", {
+    language: "zh-CN",
+    query,
+    include_adult: "false",
+    page: String(page),
+  });
 
-  return [
-    ...((moviePayload.results || []).map((movie) => ({
-      id: movie.id,
-      media_type: "movie",
-      title: movie.title,
-      original_title: movie.original_title,
-      overview: movie.overview,
-      release_date: movie.release_date,
-      poster_path: movie.poster_path,
-    }))),
-    ...((tvPayload.results || []).map((show) => ({
-      id: show.id,
-      media_type: "tv",
-      title: show.name,
-      original_title: show.original_name,
-      overview: show.overview,
-      release_date: show.first_air_date,
-      poster_path: show.poster_path,
-    }))),
-  ];
+  const results = (payload.results || [])
+    .filter((item) => item.media_type === "movie" || item.media_type === "tv")
+    .map((item) => item.media_type === "tv"
+      ? {
+          id: item.id,
+          media_type: "tv",
+          title: item.name,
+          original_title: item.original_name,
+          overview: item.overview,
+          release_date: item.first_air_date,
+          poster_path: item.poster_path,
+        }
+      : {
+          id: item.id,
+          media_type: "movie",
+          title: item.title,
+          original_title: item.original_title,
+          overview: item.overview,
+          release_date: item.release_date,
+          poster_path: item.poster_path,
+        });
+
+  return {
+    results,
+    total_pages: payload.total_pages || 1,
+  };
 }
 
 function renderSearchResults() {
@@ -959,6 +980,35 @@ function renderSearchResults() {
   elements.searchResults.querySelectorAll("[data-remove-movie]").forEach((button) => {
     button.addEventListener("click", () => removeMovieById(Number(button.dataset.removeMovie), button.dataset.mediaType || "movie"));
   });
+}
+
+function renderSearchPagination() {
+  if (state.searchTotalPages <= 1) {
+    elements.searchPagination.hidden = true;
+    return;
+  }
+
+  elements.searchPagination.hidden = false;
+  elements.searchPrevPage.disabled = state.searchPage <= 1;
+  elements.searchNextPage.disabled = state.searchPage >= state.searchTotalPages;
+  elements.searchPageMeta.textContent = `第 ${state.searchPage} / ${state.searchTotalPages} 页`;
+}
+
+async function changeSearchPage(step) {
+  const nextPage = state.searchPage + step;
+  if (nextPage < 1 || nextPage > state.searchTotalPages) {
+    return;
+  }
+
+  state.searchPage = nextPage;
+  elements.searchResults.innerHTML = createLoadingSearchCards(3);
+
+  try {
+    await runSearch();
+  } catch (error) {
+    console.error(error);
+    elements.searchResults.innerHTML = `<div class="empty-state">翻页失败，请稍后重试。</div>`;
+  }
 }
 
 async function addMovieById(movieId, mediaType = "movie") {
