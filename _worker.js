@@ -89,52 +89,76 @@ async function handleSearch(request, env) {
     return json({ results: [] }, 200);
   }
 
-  const search = new URLSearchParams({
-    api_key: env.TMDB_API_KEY,
-    language: "zh-CN",
-    query,
-    include_adult: "false",
-    page: "1",
-  });
+  const [movieResponse, tvResponse] = await Promise.all([
+    fetch(buildTmdbUrl("/search/movie", env.TMDB_API_KEY, {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: "1",
+    })),
+    fetch(buildTmdbUrl("/search/tv", env.TMDB_API_KEY, {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: "1",
+    })),
+  ]);
 
-  const response = await fetch(`https://api.themoviedb.org/3/search/movie?${search.toString()}`);
-  if (!response.ok) {
+  if (!movieResponse.ok || !tvResponse.ok) {
     return json({ message: "Search failed." }, 502);
   }
 
-  const payload = await response.json();
-  return json({
-    results: (payload.results || []).slice(0, 10).map((movie) => ({
+  const [moviePayload, tvPayload] = await Promise.all([
+    movieResponse.json(),
+    tvResponse.json(),
+  ]);
+
+  const results = [
+    ...(moviePayload.results || []).map((movie) => ({
       id: movie.id,
+      media_type: "movie",
       title: movie.title,
       original_title: movie.original_title,
       overview: movie.overview,
       release_date: movie.release_date,
       poster_path: movie.poster_path,
     })),
-  });
+    ...(tvPayload.results || []).map((show) => ({
+      id: show.id,
+      media_type: "tv",
+      title: show.name,
+      original_title: show.original_name,
+      overview: show.overview,
+      release_date: show.first_air_date,
+      poster_path: show.poster_path,
+    })),
+  ];
+
+  return json({ results: results.slice(0, 12) });
 }
 
 async function handleAddMovie(request, env) {
   const body = await request.json().catch(() => ({}));
   const movieId = Number(body.movieId);
+  const mediaType = String(body.mediaType || "movie");
   if (!Number.isInteger(movieId)) {
-    return json({ message: "movieId is required." }, 400);
+    return json({ message: "mediaId is required." }, 400);
   }
 
   const currentSource = await loadSourceLibrary(env, body.sourceLibrary);
   const currentResolved = await loadResolvedLibrary(env, body.resolvedLibrary);
 
-  if (currentResolved.movies.some((movie) => Number(movie.id) === movieId)) {
+  if (currentResolved.movies.some((movie) => Number(movie.id) === movieId && String(movie.media_type || "movie") === mediaType)) {
     return json({ sourceLibrary: currentSource, library: currentResolved }, 200);
   }
 
-  const detail = await fetchMovieDetail(env, movieId);
-  currentResolved.movies.push(transformMovie(detail, currentResolved.movies.length));
+  const detail = await fetchMediaDetail(env, mediaType, movieId);
+  currentResolved.movies.push(transformMedia(detail, mediaType, currentResolved.movies.length));
   currentSource.entries.push({
-    title: detail.title,
-    year: Number(detail.release_date?.slice(0, 4)) || undefined,
+    title: mediaType === "tv" ? detail.name : detail.title,
+    year: Number((mediaType === "tv" ? detail.first_air_date : detail.release_date)?.slice(0, 4)) || undefined,
     tmdbId: detail.id,
+    media_type: mediaType,
   });
 
   currentResolved.movies = currentResolved.movies.map((movie, index) => ({ ...movie, order: index }));
@@ -149,17 +173,18 @@ async function handleAddMovie(request, env) {
 async function handleRemoveMovie(request, env) {
   const body = await request.json().catch(() => ({}));
   const movieId = Number(body.movieId);
+  const mediaType = String(body.mediaType || "movie");
   if (!Number.isInteger(movieId)) {
-    return json({ message: "movieId is required." }, 400);
+    return json({ message: "mediaId is required." }, 400);
   }
 
   const currentSource = await loadSourceLibrary(env, body.sourceLibrary);
   const currentResolved = await loadResolvedLibrary(env, body.resolvedLibrary);
 
   currentResolved.movies = currentResolved.movies
-    .filter((movie) => Number(movie.id) !== movieId)
+    .filter((movie) => !(Number(movie.id) === movieId && String(movie.media_type || "movie") === mediaType))
     .map((movie, index) => ({ ...movie, order: index }));
-  currentSource.entries = currentSource.entries.filter((entry) => Number(entry.tmdbId) !== movieId);
+  currentSource.entries = currentSource.entries.filter((entry) => !(Number(entry.tmdbId) === movieId && String(entry.media_type || "movie") === mediaType));
 
   await env.FILM_VAULT_KV.put(KV_SOURCE_KEY, JSON.stringify(currentSource));
   await env.FILM_VAULT_KV.put(KV_RESOLVED_KEY, JSON.stringify(currentResolved));
@@ -238,7 +263,7 @@ async function loadSourceLibrary(env, fallback) {
   }
 
   return normalizeSourceLibrary(fallback || {
-    title: "我的电影墙",
+    title: "我的影视墙",
     subtitle: "",
     entries: [],
   });
@@ -251,7 +276,7 @@ async function loadResolvedLibrary(env, fallback) {
   }
 
   return normalizeResolvedLibrary(fallback || {
-    title: "我的电影墙",
+    title: "我的影视墙",
     subtitle: "",
     movies: [],
   });
@@ -259,7 +284,7 @@ async function loadResolvedLibrary(env, fallback) {
 
 function normalizeSourceLibrary(data) {
   return {
-    title: data?.title || "我的电影墙",
+    title: data?.title || "我的影视墙",
     subtitle: data?.subtitle || "",
     generatedAt: data?.generatedAt || "",
     entries: Array.isArray(data?.entries) ? data.entries : [],
@@ -268,7 +293,7 @@ function normalizeSourceLibrary(data) {
 
 function normalizeResolvedLibrary(data) {
   return {
-    title: data?.title || "我的电影墙",
+    title: data?.title || "我的影视墙",
     subtitle: data?.subtitle || "",
     generatedAt: data?.generatedAt || "",
     movies: Array.isArray(data?.movies) ? data.movies : [],
@@ -339,38 +364,50 @@ function isStaticNewer(staticLibrary, kvLibrary) {
   return new Date(staticLibrary.generatedAt).getTime() > new Date(kvLibrary.generatedAt).getTime();
 }
 
-async function fetchMovieDetail(env, movieId) {
-  const search = new URLSearchParams({
-    api_key: env.TMDB_API_KEY,
-    language: "zh-CN",
-    append_to_response: "credits,release_dates",
-  });
+async function fetchMediaDetail(env, mediaType, mediaId) {
+  const params = mediaType === "tv"
+    ? {
+        language: "zh-CN",
+        append_to_response: "credits",
+      }
+    : {
+        language: "zh-CN",
+        append_to_response: "credits,release_dates",
+      };
 
-  const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?${search.toString()}`);
+  const response = await fetch(buildTmdbUrl(`/${mediaType}/${mediaId}`, env.TMDB_API_KEY, params));
   if (!response.ok) {
-    throw new Error(`Movie detail fetch failed: ${response.status}`);
+    throw new Error(`Media detail fetch failed: ${response.status}`);
   }
 
   return response.json();
 }
 
-function transformMovie(detail, order) {
+function transformMedia(detail, mediaType, order) {
+  const title = mediaType === "tv" ? detail.name : detail.title;
+  const originalTitle = mediaType === "tv" ? detail.original_name : detail.original_title;
+  const releaseDate = mediaType === "tv" ? detail.first_air_date : detail.release_date;
+  const runtime = mediaType === "tv"
+    ? Number(detail.episode_run_time?.[0] || 0)
+    : detail.runtime;
+
   return {
     id: detail.id,
     order,
-    title: detail.title,
-    original_title: detail.original_title,
+    media_type: mediaType,
+    title,
+    original_title: originalTitle,
     overview: detail.overview,
-    release_date: detail.release_date,
-    release_country: getReleaseCountry(detail),
+    release_date: releaseDate,
+    release_country: getReleaseRegion(detail, mediaType),
     poster_path: detail.poster_path,
     backdrop_path: detail.backdrop_path,
     vote_average: detail.vote_average,
     vote_count: detail.vote_count,
-    runtime: detail.runtime,
+    runtime,
     popularity: detail.popularity,
     genres: detail.genres || [],
-    production_countries: detail.production_countries || [],
+    production_countries: getProductionCountries(detail, mediaType),
     production_companies: detail.production_companies || [],
     spoken_languages: detail.spoken_languages || [],
     cast: (detail.credits?.cast || []).slice(0, 10).map((person) => ({
@@ -380,7 +417,11 @@ function transformMovie(detail, order) {
   };
 }
 
-function getReleaseCountry(detail) {
+function getReleaseRegion(detail, mediaType) {
+  if (mediaType === "tv") {
+    return (detail.origin_country || [])[0] || "";
+  }
+
   const releaseResults = detail.release_dates?.results || [];
   const preferred = releaseResults.find((item) => item.iso_3166_1 === "CN")
     || releaseResults.find((item) => item.iso_3166_1 === "US")
@@ -392,6 +433,25 @@ function getReleaseCountry(detail) {
 
   const country = (detail.production_countries || []).find((item) => item.iso_3166_1 === preferred.iso_3166_1);
   return country?.name || preferred.iso_3166_1;
+}
+
+function getProductionCountries(detail, mediaType) {
+  if (mediaType === "tv") {
+    return (detail.origin_country || []).map((code) => ({
+      iso_3166_1: code,
+      name: code,
+    }));
+  }
+
+  return detail.production_countries || [];
+}
+
+function buildTmdbUrl(path, apiKey, params = {}) {
+  const search = new URLSearchParams({
+    api_key: apiKey,
+    ...params,
+  });
+  return `https://api.themoviedb.org/3${path}?${search.toString()}`;
 }
 
 function dedupeEntries(entries) {

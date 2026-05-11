@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Film Vault | 电影墙</title>
+  <title>Film Vault | 影视墙</title>
   <meta
     name="description"
-    content="高设计感私人电影墙，以只读展厅方式陈列你看过的所有电影。"
+    content="高设计感私人影视墙，以只读展厅方式陈列你看过的所有影视。"
   />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -26,7 +26,7 @@
     <header class="topbar">
       <div class="brand-block">
         <p class="brand-mark">FILM VAULT</p>
-        <h1 id="pageTitle">我的电影墙</h1>
+        <h1 id="pageTitle">我的影视墙</h1>
         <p class="brand-copy" id="pageSubtitle">
           一面为私人观影史准备的电影墙，用沉浸式视觉把每一次观看变成可回看的馆藏。
         </p>
@@ -37,7 +37,7 @@
         <div class="user-hub" id="userHub" hidden>
           <button class="ghost-button user-trigger" id="userMenuButton" aria-expanded="false">控制台</button>
           <div class="user-menu panel" id="userMenu" aria-hidden="true">
-            <button class="user-menu-item" id="openSearch" hidden>添加影片</button>
+          <button class="user-menu-item" id="openSearch" hidden>添加影视</button>
             <button class="user-menu-item" id="exportSource" hidden>导出片单</button>
             <button class="user-menu-item" id="exportResolved" hidden>导出数据</button>
             <p class="user-menu-note" id="statusCopy">站点为只读展厅。未登录用户只能浏览与搜索你已添加的电影。</p>
@@ -55,9 +55,9 @@
             <span class="eyebrow subtle" id="heroMeta">私人片库正在载入中...</span>
           </div>
           <div class="hero-copy">
-            <h2 id="heroTitle">准备点亮你的观影档案</h2>
+            <h2 id="heroTitle">准备点亮你的观影视档案</h2>
             <p id="heroOverview">
-              这是一个面向长期收藏的只读电影展厅，适合承载数百部电影的筛选、浏览与回看。
+              这是一个面向长期收藏的只读影视展厅，适合承载数百部影视作品的筛选、浏览与回看。
             </p>
           </div>
           <div class="hero-tags" id="heroTags"></div>
@@ -92,12 +92,12 @@
 
       <section class="filters-grid">
         <div class="filter-panel panel">
-          <label class="field-label" for="librarySearch">片库搜索</label>
+          <label class="field-label" for="librarySearch">影视库搜索</label>
           <div class="search-inline">
             <input
               type="search"
               id="librarySearch"
-              placeholder="搜索片名、简介、国家或类型"
+              placeholder="搜索片名、剧名、简介、国家或类型"
               autocomplete="off"
             />
           </div>
@@ -143,7 +143,7 @@
       <section class="section-head wall-head">
         <div>
           <span class="section-kicker">MOVIE WALL</span>
-          <h3>已看电影</h3>
+          <h3>已看影视</h3>
         </div>
         <p id="resultsMeta">正在准备你的电影海报矩阵...</p>
       </section>
@@ -162,13 +162,13 @@
       <div class="modal-head">
         <div>
           <span class="section-kicker">LOCAL ADMIN</span>
-          <h3>搜索电影并加入本地草稿</h3>
+          <h3>搜索影视并加入本地草稿</h3>
         </div>
         <button class="drawer-close modal-close" id="closeSearchModal" aria-label="关闭搜索">×</button>
       </div>
       <p class="modal-copy">仅在本地启用。添加后会保存在浏览器草稿中，你可以再导出新的片单文件。</p>
       <form class="modal-search" id="tmdbSearchForm">
-        <input type="search" id="tmdbSearchInput" placeholder="输入电影名，例如：霸王别姬 / Interstellar" />
+        <input type="search" id="tmdbSearchInput" placeholder="输入影视名，例如：霸王别姬 / 怪奇物语" />
         <button class="primary-button" type="submit">搜索</button>
       </form>
       <div class="search-results" id="searchResults"></div>
@@ -184,7 +184,7 @@
         </div>
         <button class="drawer-close modal-close" id="closeLoginModal" aria-label="关闭登录">×</button>
       </div>
-      <p class="modal-copy" id="loginCopy">上线后，只有通过管理员密码鉴权，才能搜索并添加你看过的电影。</p>
+      <p class="modal-copy" id="loginCopy">上线后，只有通过管理员密码鉴权，才能搜索并添加你看过的影视。</p>
       <form class="modal-search" id="adminLoginForm">
         <input type="password" id="adminPasswordInput" placeholder="输入管理员密码" />
         <button class="primary-button" type="submit">登录</button>

@@ -9,13 +9,13 @@ let lastBrowserRequestAt = 0;
 
 const state = {
   library: {
-    title: "我的电影墙",
-    subtitle: "一面为私人观影史准备的电影墙，用沉浸式视觉把每一次观看变成可回看的馆藏。",
+    title: "我的影视墙",
+    subtitle: "一面为私人观影史准备的影视墙，用沉浸式视觉把每一次观看变成可回看的馆藏。",
     movies: [],
   },
   sourceLibrary: {
-    title: "我的电影墙",
-    subtitle: "一面为私人观影史准备的电影墙，用沉浸式视觉把每一次观看变成可回看的馆藏。",
+    title: "我的影视墙",
+    subtitle: "一面为私人观影史准备的影视墙，用沉浸式视觉把每一次观看变成可回看的馆藏。",
     entries: [],
   },
   activeGenre: "all",
@@ -303,7 +303,7 @@ function syncLoginModalCopy() {
   }
 
   elements.loginTitle.textContent = "管理员登录";
-  elements.loginCopy.textContent = "上线后，只有通过管理员密码鉴权，才能搜索并添加你看过的电影。";
+  elements.loginCopy.textContent = "上线后，只有通过管理员密码鉴权，才能搜索并添加你看过的影视。";
   elements.adminPasswordInput.placeholder = "输入管理员密码";
 }
 
@@ -352,7 +352,7 @@ async function loadSourceLibrary() {
 
 function normalizeResolvedLibrary(data) {
   return {
-    title: data.title || "我的电影墙",
+    title: data.title || "我的影视墙",
     subtitle: data.subtitle || "",
     movies: Array.isArray(data.movies) ? data.movies : [],
   };
@@ -360,7 +360,7 @@ function normalizeResolvedLibrary(data) {
 
 function normalizeSourceLibrary(data) {
   return {
-    title: data.title || "我的电影墙",
+    title: data.title || "我的影视墙",
     subtitle: data.subtitle || "",
     entries: Array.isArray(data.entries) ? data.entries : [],
   };
@@ -706,7 +706,7 @@ async function openDetail(movieId) {
       <section class="detail-block">
         <h4>维护方式</h4>
         <div class="detail-actions">
-          <button class="movie-action" data-close-detail>返回电影墙</button>
+          <button class="movie-action" data-close-detail>返回影视墙</button>
           ${localRemoveAction}
         </div>
       </section>
@@ -714,17 +714,19 @@ async function openDetail(movieId) {
   `;
 
   elements.detailContent.querySelector("[data-close-detail]")?.addEventListener("click", closeDetailDrawer);
-  elements.detailContent.querySelector("[data-remove-movie]")?.addEventListener("click", () => {
-    removeMovieLocally(detail.id);
-    closeDetailDrawer();
-  });
-}
+    elements.detailContent.querySelector("[data-remove-movie]")?.addEventListener("click", () => {
+    removeMovieLocally(detail.id, detail.media_type || "movie");
+      closeDetailDrawer();
+    });
+  }
 
-function removeMovieLocally(movieId) {
+function removeMovieLocally(movieId, mediaType = "movie") {
   state.library.movies = state.library.movies
-    .filter((movie) => movie.id !== movieId)
+    .filter((movie) => !(Number(movie.id) === movieId && String(movie.media_type || "movie") === mediaType))
     .map((movie, index) => ({ ...movie, order: index }));
-  state.sourceLibrary.entries = state.sourceLibrary.entries.filter((entry) => Number(entry.tmdbId) !== movieId);
+  state.sourceLibrary.entries = state.sourceLibrary.entries.filter(
+    (entry) => !(Number(entry.tmdbId) === movieId && String(entry.media_type || "movie") === mediaType)
+  );
   persistLocalDraft();
   refreshLibraryViews();
   showToast("已从本地草稿移除。");
@@ -817,13 +819,13 @@ function syncSearchModalCopy() {
 
   if (state.admin.mode === "remote") {
     title.textContent = "CLOUDFLARE ADMIN";
-    heading.textContent = "搜索电影并管理云端片库";
+    heading.textContent = "搜索影视并管理云端片库";
     copy.textContent = "搜索结果里可以直接添加未收录电影，也可以删除已经在片库中的电影，变更会直接写入 Cloudflare KV。";
     return;
   }
 
   title.textContent = "LOCAL ADMIN";
-  heading.textContent = "搜索电影并管理本地草稿";
+  heading.textContent = "搜索影视并管理本地草稿";
   copy.textContent = "本地管理员模式下，搜索结果支持添加和删除，变更会保存在浏览器草稿中。";
 }
 
@@ -837,7 +839,7 @@ async function handleSearchSubmit(event) {
 
   const query = elements.tmdbSearchInput.value.trim();
   if (!query) {
-    showToast("先输入电影名再搜索。");
+    showToast("先输入影视名再搜索。");
     return;
   }
 
@@ -878,14 +880,41 @@ async function remoteSearchMovies(query) {
 }
 
 async function localSearchMovies(query) {
-  const payload = await fetchFromMovieDb("/search/movie", {
-    language: "zh-CN",
-    query,
-    include_adult: "false",
-    page: "1",
-  });
+  const [moviePayload, tvPayload] = await Promise.all([
+    fetchFromMovieDb("/search/movie", {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: "1",
+    }),
+    fetchFromMovieDb("/search/tv", {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: "1",
+    }),
+  ]);
 
-  return payload.results || [];
+  return [
+    ...((moviePayload.results || []).map((movie) => ({
+      id: movie.id,
+      media_type: "movie",
+      title: movie.title,
+      original_title: movie.original_title,
+      overview: movie.overview,
+      release_date: movie.release_date,
+      poster_path: movie.poster_path,
+    }))),
+    ...((tvPayload.results || []).map((show) => ({
+      id: show.id,
+      media_type: "tv",
+      title: show.name,
+      original_title: show.original_name,
+      overview: show.overview,
+      release_date: show.first_air_date,
+      poster_path: show.poster_path,
+    }))),
+  ];
 }
 
 function renderSearchResults() {
@@ -897,7 +926,9 @@ function renderSearchResults() {
   elements.searchResults.innerHTML = state.searchResults
     .slice(0, 10)
     .map((movie) => {
-      const exists = state.library.movies.some((item) => Number(item.id) === Number(movie.id));
+      const exists = state.library.movies.some(
+        (item) => Number(item.id) === Number(movie.id) && String(item.media_type || "movie") === String(movie.media_type || "movie")
+      );
       const poster = movie.poster_path
         ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" />`
         : `<div class="search-fallback">NO POSTER</div>`;
@@ -905,6 +936,7 @@ function renderSearchResults() {
       const actionClass = exists ? "search-result-button remove" : "search-result-button";
       const actionLabel = exists ? "删除" : "加入片库";
       const actionAttr = exists ? "data-remove-movie" : "data-add-movie";
+      const mediaLabel = movie.media_type === "tv" ? "电视剧" : "电影";
 
       return `
         <article class="search-card">
@@ -912,33 +944,34 @@ function renderSearchResults() {
           <div>
             <h4>${escapeHtml(movie.title)} <span class="muted">${formatYear(movie.release_date)}</span></h4>
             <p>${escapeHtml(truncate(movie.overview || "暂无简介。", 100))}</p>
+            <span class="result-badge">${mediaLabel}</span>
             ${badge}
           </div>
-          <button class="${actionClass}" ${actionAttr}="${movie.id}">${actionLabel}</button>
+          <button class="${actionClass}" ${actionAttr}="${movie.id}" data-media-type="${movie.media_type || "movie"}">${actionLabel}</button>
         </article>
       `;
     })
     .join("");
 
   elements.searchResults.querySelectorAll("[data-add-movie]").forEach((button) => {
-    button.addEventListener("click", () => addMovieById(Number(button.dataset.addMovie)));
+    button.addEventListener("click", () => addMovieById(Number(button.dataset.addMovie), button.dataset.mediaType || "movie"));
   });
   elements.searchResults.querySelectorAll("[data-remove-movie]").forEach((button) => {
-    button.addEventListener("click", () => removeMovieById(Number(button.dataset.removeMovie)));
+    button.addEventListener("click", () => removeMovieById(Number(button.dataset.removeMovie), button.dataset.mediaType || "movie"));
   });
 }
 
-async function addMovieById(movieId) {
-  if (state.library.movies.some((movie) => Number(movie.id) === movieId)) {
-    showToast("这部电影已经在当前片库里了。");
+async function addMovieById(movieId, mediaType = "movie") {
+  if (state.library.movies.some((movie) => Number(movie.id) === movieId && String(movie.media_type || "movie") === mediaType)) {
+    showToast("这部影视已经在当前片库里了。");
     return;
   }
 
   try {
     if (state.admin.mode === "remote") {
-      await addMovieRemotely(movieId);
+      await addMovieRemotely(movieId, mediaType);
     } else {
-      await addMovieLocally(movieId);
+      await addMovieLocally(movieId, mediaType);
     }
 
     refreshLibraryViews();
@@ -951,12 +984,12 @@ async function addMovieById(movieId) {
   }
 }
 
-async function removeMovieById(movieId) {
+async function removeMovieById(movieId, mediaType = "movie") {
   try {
     if (state.admin.mode === "remote") {
-      await removeMovieRemotely(movieId);
+      await removeMovieRemotely(movieId, mediaType);
     } else {
-      removeMovieLocally(movieId);
+      removeMovieLocally(movieId, mediaType);
     }
 
     refreshLibraryViews();
@@ -968,28 +1001,26 @@ async function removeMovieById(movieId) {
   }
 }
 
-async function addMovieLocally(movieId) {
-  const detail = await fetchFromMovieDb(`/movie/${movieId}`, {
-    language: "zh-CN",
-    append_to_response: "credits,release_dates",
-  });
-
-  state.library.movies.push(transformMovie(detail, state.library.movies.length));
+async function addMovieLocally(movieId, mediaType = "movie") {
+  const detail = await fetchLocalMediaDetail(movieId, mediaType);
+  state.library.movies.push(transformMovie(detail, state.library.movies.length, mediaType));
   state.sourceLibrary.entries.push({
-    title: detail.title,
-    year: Number(detail.release_date?.slice(0, 4)) || undefined,
+    title: mediaType === "tv" ? detail.name : detail.title,
+    year: Number((mediaType === "tv" ? detail.first_air_date : detail.release_date)?.slice(0, 4)) || undefined,
     tmdbId: detail.id,
+    media_type: mediaType,
   });
   persistLocalDraft();
 }
 
-async function addMovieRemotely(movieId) {
+async function addMovieRemotely(movieId, mediaType = "movie") {
   const response = await fetch("/api/admin/add", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       movieId,
+      mediaType,
       sourceLibrary: state.admin.remoteSeeded ? undefined : state.sourceLibrary,
       resolvedLibrary: state.admin.remoteSeeded ? undefined : state.library,
     }),
@@ -1012,13 +1043,14 @@ async function addMovieRemotely(movieId) {
   state.admin.remoteSeeded = true;
 }
 
-async function removeMovieRemotely(movieId) {
+async function removeMovieRemotely(movieId, mediaType = "movie") {
   const response = await fetch("/api/admin/remove", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       movieId,
+      mediaType,
       sourceLibrary: state.admin.remoteSeeded ? undefined : state.sourceLibrary,
       resolvedLibrary: state.admin.remoteSeeded ? undefined : state.library,
     }),
@@ -1102,23 +1134,45 @@ async function throttleBrowserRequests() {
   lastBrowserRequestAt = Date.now();
 }
 
-function transformMovie(detail, order) {
+async function fetchLocalMediaDetail(mediaId, mediaType) {
+  const path = mediaType === "tv" ? `/tv/${mediaId}` : `/movie/${mediaId}`;
+  const params = mediaType === "tv"
+    ? { language: "zh-CN", append_to_response: "credits" }
+    : { language: "zh-CN", append_to_response: "credits,release_dates" };
+  return fetchFromMovieDb(path, params);
+}
+
+function transformMovie(detail, order, mediaType = "movie") {
+  const title = mediaType === "tv" ? detail.name : detail.title;
+  const originalTitle = mediaType === "tv" ? detail.original_name : detail.original_title;
+  const releaseDate = mediaType === "tv" ? detail.first_air_date : detail.release_date;
+  const runtime = mediaType === "tv"
+    ? Number(detail.episode_run_time?.[0] || 0)
+    : detail.runtime;
+  const productionCountries = mediaType === "tv"
+    ? (detail.origin_country || []).map((code) => ({ iso_3166_1: code, name: code }))
+    : (detail.production_countries || []);
+  const releaseRegion = mediaType === "tv"
+    ? (detail.origin_country || [])[0] || ""
+    : getReleaseCountry(detail);
+
   return {
     id: detail.id,
     order,
-    title: detail.title,
-    original_title: detail.original_title,
+    media_type: mediaType,
+    title,
+    original_title: originalTitle,
     overview: detail.overview,
-    release_date: detail.release_date,
-    release_country: getReleaseCountry(detail),
+    release_date: releaseDate,
+    release_country: releaseRegion,
     poster_path: detail.poster_path,
     backdrop_path: detail.backdrop_path,
     vote_average: detail.vote_average,
     vote_count: detail.vote_count,
-    runtime: detail.runtime,
+    runtime,
     popularity: detail.popularity,
     genres: detail.genres || [],
-    production_countries: detail.production_countries || [],
+    production_countries: productionCountries,
     production_companies: detail.production_companies || [],
     spoken_languages: detail.spoken_languages || [],
     cast: (detail.credits?.cast || []).slice(0, 10).map((person) => ({
