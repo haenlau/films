@@ -94,6 +94,7 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   configureLocalAdminMode();
   bindEvents();
+  elements.searchPagination.hidden = true;
   await bootstrapLibrary();
 }
 
@@ -140,6 +141,7 @@ function bindEvents() {
   elements.openSearch?.addEventListener("click", () => {
     syncSearchModalCopy();
     setUserMenuOpen(false);
+    elements.searchPagination.hidden = true;
     openModal(elements.searchModal);
   });
   elements.exportSource?.addEventListener("click", () => {
@@ -905,43 +907,36 @@ async function remoteSearchMovies(query, page = 1) {
 }
 
 async function localSearchMovies(query, page = 1) {
-  const [moviePayload, tvPayload] = await Promise.all([
-    fetchFromMovieDb("/search/movie", {
-      language: "zh-CN",
-      query,
-      include_adult: "false",
-      page: String(page),
-    }),
-    fetchFromMovieDb("/search/tv", {
-      language: "zh-CN",
-      query,
-      include_adult: "false",
-      page: String(page),
-    }),
-  ]);
+  const payload = await fetchFromMovieDb("/search/multi", {
+    language: "zh-CN",
+    query,
+    include_adult: "false",
+    page: String(page),
+  });
 
   return {
-    results: [
-      ...((moviePayload.results || []).map((movie) => ({
-        id: movie.id,
-        media_type: "movie",
-        title: movie.title,
-        original_title: movie.original_title,
-        overview: movie.overview,
-        release_date: movie.release_date,
-        poster_path: movie.poster_path,
-      }))),
-      ...((tvPayload.results || []).map((show) => ({
-        id: show.id,
-        media_type: "tv",
-        title: show.name,
-        original_title: show.original_name,
-        overview: show.overview,
-        release_date: show.first_air_date,
-        poster_path: show.poster_path,
-      }))),
-    ],
-    total_pages: Math.max(Number(moviePayload.total_pages || 1), Number(tvPayload.total_pages || 1)),
+    results: (payload.results || [])
+      .filter((item) => item.media_type === "movie" || item.media_type === "tv")
+      .map((item) => item.media_type === "tv"
+        ? {
+            id: item.id,
+            media_type: "tv",
+            title: item.name,
+            original_title: item.original_name,
+            overview: item.overview,
+            release_date: item.first_air_date,
+            poster_path: item.poster_path,
+          }
+        : {
+            id: item.id,
+            media_type: "movie",
+            title: item.title,
+            original_title: item.original_title,
+            overview: item.overview,
+            release_date: item.release_date,
+            poster_path: item.poster_path,
+          }),
+    total_pages: Number(payload.total_pages || 1),
   };
 }
 

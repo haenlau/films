@@ -848,6 +848,10 @@ input[type="range"] {
   margin-top: 14px;
 }
 
+.search-pagination[hidden] {
+  display: none !important;
+}
+
 .pagination-button {
   min-width: 88px;
 }
