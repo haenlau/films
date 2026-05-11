@@ -24,6 +24,7 @@ const state = {
   searchQuery: "",
   searchPage: 1,
   searchTotalPages: 1,
+  searchPerformed: false,
   admin: {
     mode: "none",
     apiKey: "",
@@ -829,7 +830,7 @@ function syncSearchModalCopy() {
   if (state.admin.mode === "remote") {
     title.textContent = "CLOUDFLARE ADMIN";
     heading.textContent = "搜索影视并管理云端片库";
-    copy.textContent = "搜索结果里可以直接添加未收录电影，也可以删除已经在片库中的电影，变更会直接写入 Cloudflare KV。";
+    copy.textContent = "搜索结果里可以直接添加未收录影视，也可以删除已经在片库中的影视。";
     return;
   }
 
@@ -854,6 +855,7 @@ async function handleSearchSubmit(event) {
 
   state.searchQuery = query;
   state.searchPage = 1;
+  state.searchPerformed = true;
   elements.searchResults.innerHTML = createLoadingSearchCards(3);
   elements.searchPagination.hidden = true;
 
@@ -903,38 +905,43 @@ async function remoteSearchMovies(query, page = 1) {
 }
 
 async function localSearchMovies(query, page = 1) {
-  const payload = await fetchFromMovieDb("/search/multi", {
-    language: "zh-CN",
-    query,
-    include_adult: "false",
-    page: String(page),
-  });
-
-  const results = (payload.results || [])
-    .filter((item) => item.media_type === "movie" || item.media_type === "tv")
-    .map((item) => item.media_type === "tv"
-      ? {
-          id: item.id,
-          media_type: "tv",
-          title: item.name,
-          original_title: item.original_name,
-          overview: item.overview,
-          release_date: item.first_air_date,
-          poster_path: item.poster_path,
-        }
-      : {
-          id: item.id,
-          media_type: "movie",
-          title: item.title,
-          original_title: item.original_title,
-          overview: item.overview,
-          release_date: item.release_date,
-          poster_path: item.poster_path,
-        });
+  const [moviePayload, tvPayload] = await Promise.all([
+    fetchFromMovieDb("/search/movie", {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: String(page),
+    }),
+    fetchFromMovieDb("/search/tv", {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: String(page),
+    }),
+  ]);
 
   return {
-    results,
-    total_pages: payload.total_pages || 1,
+    results: [
+      ...((moviePayload.results || []).map((movie) => ({
+        id: movie.id,
+        media_type: "movie",
+        title: movie.title,
+        original_title: movie.original_title,
+        overview: movie.overview,
+        release_date: movie.release_date,
+        poster_path: movie.poster_path,
+      }))),
+      ...((tvPayload.results || []).map((show) => ({
+        id: show.id,
+        media_type: "tv",
+        title: show.name,
+        original_title: show.original_name,
+        overview: show.overview,
+        release_date: show.first_air_date,
+        poster_path: show.poster_path,
+      }))),
+    ],
+    total_pages: Math.max(Number(moviePayload.total_pages || 1), Number(tvPayload.total_pages || 1)),
   };
 }
 
@@ -983,7 +990,7 @@ function renderSearchResults() {
 }
 
 function renderSearchPagination() {
-  if (state.searchTotalPages <= 1) {
+  if (!state.searchPerformed || state.searchTotalPages <= 1) {
     elements.searchPagination.hidden = true;
     return;
   }

@@ -90,43 +90,54 @@ async function handleSearch(request, env) {
     return json({ results: [], total_pages: 1 }, 200);
   }
 
-  const response = await fetch(buildTmdbUrl("/search/multi", env.TMDB_API_KEY, {
-    language: "zh-CN",
-    query,
-    include_adult: "false",
-    page: String(page),
-  }));
+  const [movieResponse, tvResponse] = await Promise.all([
+    fetch(buildTmdbUrl("/search/movie", env.TMDB_API_KEY, {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: String(page),
+    })),
+    fetch(buildTmdbUrl("/search/tv", env.TMDB_API_KEY, {
+      language: "zh-CN",
+      query,
+      include_adult: "false",
+      page: String(page),
+    })),
+  ]);
 
-  if (!response.ok) {
+  if (!movieResponse.ok || !tvResponse.ok) {
     return json({ message: "Search failed." }, 502);
   }
 
-  const payload = await response.json();
-  const results = (payload.results || [])
-    .filter((item) => item.media_type === "movie" || item.media_type === "tv")
-    .map((item) => item.media_type === "tv"
-      ? {
-          id: item.id,
-          media_type: "tv",
-          title: item.name,
-          original_title: item.original_name,
-          overview: item.overview,
-          release_date: item.first_air_date,
-          poster_path: item.poster_path,
-        }
-      : {
-          id: item.id,
-          media_type: "movie",
-          title: item.title,
-          original_title: item.original_title,
-          overview: item.overview,
-          release_date: item.release_date,
-          poster_path: item.poster_path,
-        });
+  const [moviePayload, tvPayload] = await Promise.all([
+    movieResponse.json(),
+    tvResponse.json(),
+  ]);
+
+  const results = [
+    ...(moviePayload.results || []).map((movie) => ({
+      id: movie.id,
+      media_type: "movie",
+      title: movie.title,
+      original_title: movie.original_title,
+      overview: movie.overview,
+      release_date: movie.release_date,
+      poster_path: movie.poster_path,
+    })),
+    ...(tvPayload.results || []).map((show) => ({
+      id: show.id,
+      media_type: "tv",
+      title: show.name,
+      original_title: show.original_name,
+      overview: show.overview,
+      release_date: show.first_air_date,
+      poster_path: show.poster_path,
+    })),
+  ];
 
   return json({
     results,
-    total_pages: payload.total_pages || 1,
+    total_pages: Math.max(Number(moviePayload.total_pages || 1), Number(tvPayload.total_pages || 1)),
   });
 }
 
