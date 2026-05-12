@@ -947,7 +947,6 @@ function renderSearchResults() {
   }
 
   elements.searchResults.innerHTML = state.searchResults
-    .slice(0, 10)
     .map((movie) => {
       const exists = state.library.movies.some(
         (item) => Number(item.id) === Number(movie.id) && String(item.media_type || "movie") === String(movie.media_type || "movie")
