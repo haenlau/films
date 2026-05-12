@@ -1,21 +1,24 @@
 # Film Vault
 
-一个面向个人长期使用的电影墙项目。
+一个面向个人长期使用的 **影视墙** 项目。
 
 它的目标很明确：
 
-- 公开展示你已经看过的电影
+- 公开展示你已经看过的影视作品
 - 允许访客搜索和浏览你的片库
-- 只有管理员登录后，才可以添加或删除影片
+- 只有管理员登录后，才可以添加或删除影视
 - 支持本地维护，也支持部署到 Cloudflare Pages
 
 ## 功能概览
 
-- 电影墙首页展示海报、评分、上映时间、地区、简介、演员等基础信息
-- 支持片库搜索、排序、地区筛选、评分筛选、类型筛选
-- 管理员登录后可搜索电影并直接加入片库
-- 管理员可删除已经添加到片库的电影
-- Cloudflare 线上版本通过 KV 持久化片库数据
+- 首页展示海报、评分、上映时间、地区、简介、演员等基础信息
+- 支持 **影视库搜索**
+- 支持按上映时间、评分、标题、加入顺序排序
+- 支持地区、评分、类型筛选
+- 管理员登录后可搜索并添加影视
+- 管理员可删除已经加入片库的影视
+- 管理员搜索支持 **分页翻页**
+- 线上版本通过 **Cloudflare KV** 持久化片库
 - 本地双击 `index.html` 也可以直接预览
 
 ## 项目结构
@@ -30,15 +33,15 @@
 ├─ wrangler.example.toml      # Cloudflare 配置模板
 ├─ admin.local.example.js     # 本地管理员配置模板
 ├─ data/
-│  ├─ library.json            # 源片单（title / year / tmdbId）
+│  ├─ library.json            # 源片单（title / year / tmdbId / media_type）
 │  ├─ library.resolved.json   # 前端完整静态片库
 │  ├─ library.source.js       # 本地 file:// 预览使用的数据脚本
 │  └─ library.resolved.js     # 本地 file:// 预览使用的数据脚本
 └─ scripts/
    ├─ rebuild-library.mjs     # 根据源片单重建完整静态片库
-   ├─ add-movie.mjs           # 本地命令行搜索并添加电影
+   ├─ add-movie.mjs           # 本地命令行搜索并添加影视
    └─ lib/
-      ├─ movie-db.mjs         # 电影数据库请求封装
+      ├─ movie-db.mjs         # TMDB 请求封装
       └─ library-files.mjs    # 片库文件读写
 ```
 
@@ -51,24 +54,23 @@ git clone https://github.com/haenlau/films.git
 cd films
 ```
 
-如果你只是想本地打开预览页面，不需要额外安装依赖。
+如果你只是想本地打开预览页面，不需要额外安装依赖。  
+如果你要运行脚本重建片库，确保本机安装 **Node.js 18+**。
 
-如果你要运行脚本重建片库，确保本机有 Node.js 18+。
+## 本地预览
 
-## 本地使用
-
-### 1. 直接预览
+### 直接打开
 
 直接双击 `index.html` 即可。
 
-为了兼容 `file://` 打开方式，页面会优先读取：
+为了兼容 `file://` 访问，页面会优先读取：
 
 - `data/library.source.js`
 - `data/library.resolved.js`
 
 所以即使没有本地 HTTP 服务，也能正常显示片库。
 
-### 2. 启用本地管理员模式
+### 本地管理员模式
 
 复制模板文件：
 
@@ -91,13 +93,13 @@ window.FILM_VAULT_ADMIN = {
 - 本地打开页面后，右上角会显示 `登录管理`
 - 登录成功后，才会出现 `控制台`
 - 控制台里可以执行：
-  - `添加影片`
+  - `添加影视`
   - `导出片单`
   - `导出数据`
 
-### 3. 本地命令行维护片库
+## 本地命令行维护
 
-如果你习惯命令行方式维护片库，可以在项目根目录创建 `.dev.vars`：
+如果你更习惯脚本方式维护片库，可以在项目根目录创建 `.dev.vars`：
 
 ```env
 TMDB_API_KEY=你的密钥
@@ -105,10 +107,10 @@ TMDB_API_KEY=你的密钥
 
 然后使用：
 
-按电影名搜索并添加：
+按影视名搜索并添加：
 
 ```bash
-npm run add:movie -- 霸王别姬
+npm run add:movie -- 怪奇物语
 ```
 
 根据 `data/library.json` 重新生成完整片库：
@@ -127,14 +129,21 @@ npm run rebuild:library
 
 ```json
 {
-  "title": "我的电影墙",
-  "subtitle": "一面为私人观影史准备的电影墙。",
-  "generatedAt": "2026-04-23T07:21:39.265Z",
+  "title": "我的影视墙",
+  "subtitle": "一面为私人观影史准备的影视墙。",
+  "generatedAt": "2026-05-11T14:30:48.507Z",
   "entries": [
     {
       "title": "黑洞频率",
       "year": 2000,
-      "tmdbId": 10559
+      "tmdbId": 10559,
+      "media_type": "movie"
+    },
+    {
+      "title": "怪奇物语",
+      "year": 2016,
+      "tmdbId": 66732,
+      "media_type": "tv"
     }
   ]
 }
@@ -147,12 +156,13 @@ npm run rebuild:library
 - 海报
 - 背景图
 - 评分
-- 上映时间
+- 上映/首播时间
 - 国家地区
 - 类型
 - 制作公司
 - 演员
 - 简介
+- 媒体类型（`movie` / `tv`）
 
 不要手工维护这个文件，推荐通过脚本生成。
 
@@ -165,7 +175,7 @@ npm run rebuild:library
 - 静态站点：`index.html` / `styles.css` / `app.js`
 - 服务端接口：`_worker.js`
 
-所以最适合 Pages + Advanced Mode。
+所以最适合 **Pages + Advanced Mode**。
 
 ### Pages 构建配置
 
@@ -175,7 +185,7 @@ npm run rebuild:library
 - Build command: 留空
 - Build output directory: `.`
 
-这个项目不需要传统的前端构建命令。
+这个项目不需要传统前端构建命令。
 
 ### Cloudflare 必要配置
 
@@ -199,7 +209,7 @@ SESSION_SECRET
 
 说明：
 
-- `TMDB_API_KEY`：电影数据库接口密钥
+- `TMDB_API_KEY`：TMDB 接口密钥
 - `ADMIN_PASSWORD`：线上管理员登录密码
 - `SESSION_SECRET`：登录态签名密钥
 
@@ -224,7 +234,7 @@ SESSION_SECRET
 普通访客：
 
 - 只能浏览片库
-- 只能搜索你已经添加的电影
+- 只能搜索你已经添加的影视
 - 无法看到管理功能
 
 管理员：
@@ -233,20 +243,35 @@ SESSION_SECRET
 2. 输入密码
 3. 登录成功后出现 `控制台`
 4. 在控制台中执行：
-   - `添加影片`
+   - `添加影视`
    - `导出片单`
    - `导出数据`
 5. 在线上环境中，添加/删除会直接写入 Cloudflare KV
 
+## 搜索分页
+
+控制台中的“添加影视”搜索支持分页。
+
+行为如下：
+
+- 未搜索时，不显示分页控件
+- 搜索后，如果只有 1 页结果，不显示分页控件
+- 搜索后，如果有多页结果，会显示：
+  - `上一页`
+  - `第 X / Y 页`
+  - `下一页`
+
+这对处理重名影视作品很重要，因为很多目标条目不会出现在第一页。
+
 ## 默认排序
 
-站点当前默认使用：
+站点默认使用：
 
 ```text
 上映时间
 ```
 
-也就是说，已看电影默认按上映时间排序，而不是按评分排序。
+也就是说，已看影视默认按上映/首播时间排序，而不是按评分排序。
 
 ## 常见维护流程
 
@@ -257,7 +282,7 @@ SESSION_SECRET
 1. 配置 `admin.local.js`
 2. 双击打开 `index.html`
 3. 登录
-4. 通过控制台添加影片
+4. 通过控制台添加影视
 5. 导出 `library.json` 和 `library.resolved.json`
 6. 提交到 GitHub
 
@@ -275,7 +300,7 @@ SESSION_SECRET
 
 1. 打开线上站点
 2. 管理员登录
-3. 在控制台里添加或删除影片
+3. 在控制台里添加或删除影视
 4. 数据直接写入 Cloudflare KV
 
 ## 注意事项
@@ -283,7 +308,11 @@ SESSION_SECRET
 - `admin.local.js` 不要提交到仓库
 - `.dev.vars`、`.env` 一类本地密钥文件不要提交到仓库
 - `data/library.resolved.json` 体积会随着片库增长变大，这是正常现象
-- 当前项目主要按“电影片库”设计，部分剧集/番组名称未必能稳定匹配
+- 线上主要读写 KV，但仓库中的 `data/*` 仍然需要保留，用于：
+  - 初始种子数据
+  - KV 数据纠偏
+  - 本地预览
+  - Git 版本化备份
 
 ## 推荐环境
 
