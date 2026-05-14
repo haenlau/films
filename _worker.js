@@ -47,18 +47,25 @@ async function handleTmdbImageProxy(request) {
   }
 
   const safeSize = normalizeTmdbImageSize(rawSize);
-  const cache = caches.default;
-  const cacheKey = new Request(url.toString(), request);
-  const cached = await cache.match(cacheKey);
-  if (cached) {
-    return cached;
+  const cache = getEdgeCache();
+  const cacheKey = new Request(url.toString(), { method: "GET" });
+
+  if (cache) {
+    try {
+      const cached = await cache.match(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch (error) {
+      console.warn("Edge cache read failed, fallback to direct fetch.", error);
+    }
   }
 
   const upstreamUrl = `${TMDB_IMAGE_BASE}/${safeSize}${rawPath}`;
   const upstreamResponse = await fetch(upstreamUrl, {
-    cf: {
-      cacheTtl: 60 * 60 * 24 * 30,
-      cacheEverything: true,
+    method: "GET",
+    headers: {
+      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
     },
   });
 
@@ -75,8 +82,27 @@ async function handleTmdbImageProxy(request) {
     headers,
   });
 
-  await cache.put(cacheKey, response.clone());
+  if (cache) {
+    try {
+      await cache.put(cacheKey, response.clone());
+    } catch (error) {
+      console.warn("Edge cache write failed, continue without cache.", error);
+    }
+  }
+
   return response;
+}
+
+function getEdgeCache() {
+  try {
+    if (typeof caches !== "undefined" && caches?.default) {
+      return caches.default;
+    }
+  } catch (error) {
+    console.warn("Edge cache API unavailable.", error);
+  }
+
+  return null;
 }
 
 function normalizeTmdbImageSize(size) {
