@@ -3,8 +3,6 @@ const SOURCE_LIBRARY_URL = "./data/library.json";
 const MOVIE_DB_BASE_URL = "https://api.themoviedb.org/3";
 const BROWSER_REQUEST_INTERVAL_MS = 120;
 const STORAGE_KEY = "film-vault.local-draft.v3";
-const INITIAL_RENDER_COUNT = 24;
-const RENDER_BATCH_COUNT = 24;
 
 let lastBrowserRequestAt = 0;
 
@@ -21,8 +19,6 @@ const state = {
   },
   activeGenre: "all",
   featuredMovieId: null,
-  renderedCount: INITIAL_RENDER_COUNT,
-  visibleMovies: [],
   searchResults: [],
   searchQuery: "",
   searchPage: 1,
@@ -53,7 +49,6 @@ const elements = {
   exportSource: document.getElementById("exportSource"),
   exportResolved: document.getElementById("exportResolved"),
   movieWall: document.getElementById("movieWall"),
-  wallSentinel: document.getElementById("wallSentinel"),
   resultsMeta: document.getElementById("resultsMeta"),
   statCount: document.getElementById("statCount"),
   statRating: document.getElementById("statRating"),
@@ -124,17 +119,6 @@ function bindEvents() {
 
   elements.heroShuffleButton.addEventListener("click", shuffleFeaturedMovie);
   elements.closeDetail.addEventListener("click", closeDetailDrawer);
-
-  if (elements.wallSentinel) {
-    const observer = new IntersectionObserver((entries) => {
-      const entry = entries[0];
-      if (!entry?.isIntersecting) {
-        return;
-      }
-      maybeRenderMoreMovies();
-    }, { rootMargin: "600px 0px" });
-    observer.observe(elements.wallSentinel);
-  }
 
   elements.userMenuButton?.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -426,10 +410,7 @@ function persistLocalDraft() {
 
 function renderLibrary() {
   const filteredMovies = getFilteredMovies();
-  state.visibleMovies = filteredMovies;
-  state.renderedCount = Math.min(Math.max(state.renderedCount, INITIAL_RENDER_COUNT), filteredMovies.length || INITIAL_RENDER_COUNT);
-  const renderedMovies = filteredMovies.slice(0, state.renderedCount);
-  updateResultsMeta(renderedMovies, filteredMovies.length);
+  updateResultsMeta(filteredMovies);
   updateFeaturedMovieIfNeeded(filteredMovies);
 
   if (!filteredMovies.length) {
@@ -441,26 +422,15 @@ function renderLibrary() {
     return;
   }
 
-  elements.movieWall.innerHTML = renderedMovies.map(renderMovieCard).join("");
+  elements.movieWall.innerHTML = filteredMovies.map(renderMovieCard).join("");
   elements.movieWall.querySelectorAll("[data-open-detail]").forEach((card) => {
     card.addEventListener("click", () => openDetail(Number(card.dataset.openDetail)));
   });
 }
 
-function maybeRenderMoreMovies() {
-  const total = state.visibleMovies.length;
-  if (!total || state.renderedCount >= total) {
-    return;
-  }
-
-  state.renderedCount = Math.min(total, state.renderedCount + RENDER_BATCH_COUNT);
-  renderLibrary();
-}
-
 function renderMovieCard(movie) {
-  const posterSize = getResponsivePosterSize();
   const poster = movie.poster_path
-    ? `<img src="${getImageUrl(movie.poster_path, posterSize)}" alt="${escapeHtml(movie.title)} 海报" loading="lazy" />`
+    ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" loading="lazy" />`
     : `<div class="movie-fallback">${escapeHtml(movie.title)}</div>`;
 
   const genres = (movie.genres || []).slice(0, 2).map((genre) => genre.name).join(" / ") || "未分类";
@@ -606,9 +576,9 @@ function buildRegionOptions() {
   elements.regionSelect.value = regionMap.has(currentValue) || currentValue === "all" ? currentValue : "all";
 }
 
-function updateResultsMeta(renderedMovies, filteredTotal) {
-  const visible = renderedMovies.length;
-  const total = filteredTotal;
+function updateResultsMeta(filteredMovies) {
+  const visible = filteredMovies.length;
+  const total = state.library.movies.length;
   const sortText = {
     rating: "评分优先",
     release: "上映时间",
@@ -636,7 +606,7 @@ function updateFeaturedMovie(preferredId) {
 
   state.featuredMovieId = featured.id;
   const backdrop = featured.backdrop_path
-    ? `linear-gradient(90deg, rgba(5, 7, 11, 0.92), rgba(5, 7, 11, 0.55) 42%, rgba(5, 7, 11, 0.82) 100%), url(${getImageUrl(featured.backdrop_path, getResponsiveBackdropSize())})`
+    ? `linear-gradient(90deg, rgba(5, 7, 11, 0.92), rgba(5, 7, 11, 0.55) 42%, rgba(5, 7, 11, 0.82) 100%), url(${getImageUrl(featured.backdrop_path, "w1280")})`
     : "linear-gradient(135deg, rgba(255, 122, 24, 0.14), rgba(212, 57, 62, 0.16), rgba(10, 14, 20, 0.92))";
 
   const countries = (featured.production_countries || []).map((country) => country.name).slice(0, 2);
@@ -688,28 +658,19 @@ function shuffleFeaturedMovie() {
 }
 
 async function openDetail(movieId) {
-  const summary = state.library.movies.find((movie) => movie.id === movieId);
-  if (!summary) {
+  const detail = state.library.movies.find((movie) => movie.id === movieId);
+  if (!detail) {
     return;
   }
 
-  let detail = summary;
   openDrawer();
-  if (/^https?:$/.test(window.location.protocol)) {
-    try {
-      detail = await fetchDetailRemotely(summary.id, summary.media_type || "movie");
-    } catch (error) {
-      console.warn("详情按需加载失败，回退到摘要数据。", error);
-    }
-  }
-
   const cast = (detail.cast || []).slice(0, 8);
   const releaseCountry = detail.release_country || "";
   const companies = (detail.production_companies || []).slice(0, 5).map((item) => item.name).join(" / ");
   const countries = (detail.production_countries || []).map((item) => item.name).join(" / ");
   const genres = (detail.genres || []).map((item) => item.name).join(" / ");
   const detailHeroBackground = detail.backdrop_path || detail.poster_path
-    ? `url('${getImageUrl(detail.backdrop_path || detail.poster_path, getResponsiveDetailBackdropSize())}')`
+    ? `url('${getImageUrl(detail.backdrop_path || detail.poster_path, "w1280")}')`
     : "linear-gradient(135deg, rgba(255, 122, 24, 0.18), rgba(212, 57, 62, 0.2), rgba(10, 14, 20, 0.96))";
   const localRemoveAction = state.admin.mode === "local"
     ? `<button class="movie-action danger-button" data-remove-movie="${detail.id}">从本地草稿移除</button>`
@@ -995,9 +956,8 @@ function renderSearchResults() {
       const exists = state.library.movies.some(
         (item) => Number(item.id) === Number(movie.id) && String(item.media_type || "movie") === String(movie.media_type || "movie")
       );
-      const searchPosterSize = getResponsiveSearchPosterSize();
       const poster = movie.poster_path
-        ? `<img src="${getImageUrl(movie.poster_path, searchPosterSize)}" alt="${escapeHtml(movie.title)} 海报" />`
+        ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" />`
         : `<div class="search-fallback">NO POSTER</div>`;
       const badge = exists ? `<span class="result-badge">已在片库中</span>` : "";
       const actionClass = exists ? "search-result-button remove" : "search-result-button";
@@ -1344,55 +1304,6 @@ function getImageUrl(path, size = "w780") {
   });
 
   return `/img/tmdb?${search.toString()}`;
-}
-
-function getResponsivePosterSize() {
-  if (window.innerWidth <= 560) {
-    return "w185";
-  }
-  if (window.innerWidth <= 860) {
-    return "w300";
-  }
-  return "w342";
-}
-
-function getResponsiveSearchPosterSize() {
-  if (window.innerWidth <= 560) {
-    return "w154";
-  }
-  if (window.innerWidth <= 860) {
-    return "w185";
-  }
-  return "w342";
-}
-
-function getResponsiveBackdropSize() {
-  if (window.innerWidth <= 560) {
-    return "w780";
-  }
-  if (window.innerWidth <= 860) {
-    return "w780";
-  }
-  return "w1280";
-}
-
-function getResponsiveDetailBackdropSize() {
-  if (window.innerWidth <= 860) {
-    return "w780";
-  }
-  return "w1280";
-}
-
-async function fetchDetailRemotely(mediaId, mediaType) {
-  const response = await fetch(`/api/detail?id=${encodeURIComponent(mediaId)}&type=${encodeURIComponent(mediaType)}`, {
-    headers: { "Cache-Control": "no-store" },
-  });
-
-  if (!response.ok) {
-    throw new Error(`详情请求失败: ${response.status}`);
-  }
-
-  return response.json();
 }
 
 function showToast(message) {

@@ -11,9 +11,6 @@ export default {
     if (url.pathname === "/api/library" && request.method === "GET") {
       return handleGetLibrary(env);
     }
-    if (url.pathname === "/api/detail" && request.method === "GET") {
-      return handleGetDetail(request, env);
-    }
     if (url.pathname === "/api/admin/session" && request.method === "GET") {
       return handleGetSession(request, env);
     }
@@ -104,33 +101,7 @@ async function handleGetLibrary(env) {
     return json({ message: "Library not seeded yet." }, 404);
   }
 
-  return json({
-    title: resolvedLibrary.title,
-    subtitle: resolvedLibrary.subtitle,
-    generatedAt: resolvedLibrary.generatedAt,
-    movies: resolvedLibrary.movies.map(toSummaryMovie),
-  }, 200);
-}
-
-async function handleGetDetail(request, env) {
-  const url = new URL(request.url);
-  const mediaId = Number(url.searchParams.get("id"));
-  const mediaType = String(url.searchParams.get("type") || "movie");
-
-  if (!Number.isInteger(mediaId)) {
-    return json({ message: "Invalid id" }, 400);
-  }
-
-  const { resolvedLibrary } = await ensureLibraryState(env);
-  const detail = resolvedLibrary.movies.find(
-    (item) => Number(item.id) === mediaId && String(item.media_type || "movie") === mediaType
-  );
-
-  if (!detail) {
-    return json({ message: "Not found" }, 404);
-  }
-
-  return json(detail, 200);
+  return json(resolvedLibrary, 200);
 }
 
 async function handleGetSession(request, env) {
@@ -382,35 +353,6 @@ function normalizeResolvedLibrary(data) {
     generatedAt: data?.generatedAt || "",
     movies: Array.isArray(data?.movies) ? data.movies : [],
   };
-}
-
-function toSummaryMovie(movie) {
-  return {
-    id: movie.id,
-    order: movie.order,
-    media_type: movie.media_type || "movie",
-    title: movie.title,
-    original_title: movie.original_title,
-    overview: trimOverview(movie.overview),
-    release_date: movie.release_date,
-    release_country: movie.release_country,
-    poster_path: movie.poster_path,
-    backdrop_path: movie.backdrop_path,
-    vote_average: movie.vote_average,
-    vote_count: movie.vote_count,
-    runtime: movie.runtime,
-    popularity: movie.popularity,
-    genres: movie.genres || [],
-    production_countries: movie.production_countries || [],
-  };
-}
-
-function trimOverview(overview) {
-  const value = String(overview || "");
-  if (value.length <= 120) {
-    return value;
-  }
-  return `${value.slice(0, 120).trim()}...`;
 }
 
 async function ensureLibraryState(env) {
