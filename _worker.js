@@ -2,6 +2,7 @@ const COOKIE_NAME = "film_vault_admin";
 const COOKIE_MAX_AGE = 60 * 60 * 8;
 const KV_SOURCE_KEY = "library:source";
 const KV_RESOLVED_KEY = "library:resolved";
+const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 
 export default {
   async fetch(request, env) {
@@ -28,10 +29,71 @@ export default {
     if (url.pathname === "/api/admin/remove" && request.method === "POST") {
       return withAuth(request, env, () => handleRemoveMovie(request, env));
     }
+    if (url.pathname === "/img/tmdb" && request.method === "GET") {
+      return handleTmdbImageProxy(request);
+    }
 
     return env.ASSETS.fetch(request);
   },
 };
+
+async function handleTmdbImageProxy(request) {
+  const url = new URL(request.url);
+  const rawPath = String(url.searchParams.get("path") || "").trim();
+  const rawSize = String(url.searchParams.get("size") || "w500").trim();
+
+  if (!rawPath.startsWith("/")) {
+    return new Response("Invalid image path", { status: 400 });
+  }
+
+  const safeSize = normalizeTmdbImageSize(rawSize);
+  const cache = caches.default;
+  const cacheKey = new Request(url.toString(), request);
+  const cached = await cache.match(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const upstreamUrl = `${TMDB_IMAGE_BASE}/${safeSize}${rawPath}`;
+  const upstreamResponse = await fetch(upstreamUrl, {
+    cf: {
+      cacheTtl: 60 * 60 * 24 * 30,
+      cacheEverything: true,
+    },
+  });
+
+  if (!upstreamResponse.ok) {
+    return new Response("Image fetch failed", { status: upstreamResponse.status });
+  }
+
+  const headers = new Headers(upstreamResponse.headers);
+  headers.set("Cache-Control", "public, max-age=2592000, s-maxage=2592000, immutable");
+  headers.set("Access-Control-Allow-Origin", "*");
+
+  const response = new Response(upstreamResponse.body, {
+    status: upstreamResponse.status,
+    headers,
+  });
+
+  await cache.put(cacheKey, response.clone());
+  return response;
+}
+
+function normalizeTmdbImageSize(size) {
+  const allowed = new Set([
+    "w92",
+    "w154",
+    "w185",
+    "w300",
+    "w342",
+    "w500",
+    "w780",
+    "w1280",
+    "original",
+  ]);
+
+  return allowed.has(size) ? size : "w500";
+}
 
 async function handleGetLibrary(env) {
   const { resolvedLibrary } = await ensureLibraryState(env);

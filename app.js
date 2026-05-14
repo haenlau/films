@@ -1,6 +1,5 @@
 const RESOLVED_LIBRARY_URL = "./data/library.resolved.json";
 const SOURCE_LIBRARY_URL = "./data/library.json";
-const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/";
 const MOVIE_DB_BASE_URL = "https://api.themoviedb.org/3";
 const BROWSER_REQUEST_INTERVAL_MS = 120;
 const STORAGE_KEY = "film-vault.local-draft.v3";
@@ -1289,7 +1288,16 @@ function closeModal(modal) {
 }
 
 function getImageUrl(path, size = "w780") {
-  return path ? `${IMAGE_BASE_URL}${size}${path}` : "";
+  if (!path) {
+    return "";
+  }
+
+  const search = new URLSearchParams({
+    path,
+    size,
+  });
+
+  return `/img/tmdb?${search.toString()}`;
 }
 
 function showToast(message) {
