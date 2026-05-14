@@ -595,9 +595,10 @@ function updateFeaturedMovie(preferredId) {
     return;
   }
 
+  const preferredPool = getFeaturedPool(source);
   const featured = preferredId
     ? source.find((movie) => movie.id === preferredId)
-    : pickFeaturedMovie(source);
+    : pickFeaturedMovie(preferredPool);
 
   if (!featured) {
     return;
@@ -638,12 +639,17 @@ function pickFeaturedMovie(movies) {
   return top[Math.floor(Math.random() * top.length)];
 }
 
+function getFeaturedPool(movies) {
+  const movieOnly = movies.filter((item) => String(item.media_type || "movie") === "movie");
+  return movieOnly.length ? movieOnly : movies;
+}
+
 function shuffleFeaturedMovie() {
   if (!state.library.movies.length) {
     return;
   }
 
-  const candidates = state.library.movies.filter((movie) => movie.id !== state.featuredMovieId);
+  const candidates = getFeaturedPool(state.library.movies).filter((movie) => movie.id !== state.featuredMovieId);
   if (!candidates.length) {
     return;
   }
