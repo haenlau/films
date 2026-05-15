@@ -20,6 +20,7 @@ const state = {
   },
   activeGenre: "all",
   featuredMovieId: null,
+  heroVisualToken: 0,
   searchResults: [],
   searchQuery: "",
   searchPage: 1,
@@ -606,14 +607,15 @@ function updateFeaturedMovie(preferredId) {
   }
 
   state.featuredMovieId = featured.id;
-  const backdrop = featured.backdrop_path
-    ? `linear-gradient(90deg, rgba(5, 7, 11, 0.92), rgba(5, 7, 11, 0.55) 42%, rgba(5, 7, 11, 0.82) 100%), url(${getImageUrl(featured.backdrop_path, "w1280")})`
-    : "linear-gradient(135deg, rgba(255, 122, 24, 0.14), rgba(212, 57, 62, 0.16), rgba(10, 14, 20, 0.92))";
+  elements.heroBackdrop.style.backgroundImage = "linear-gradient(135deg, rgba(255, 122, 24, 0.14), rgba(212, 57, 62, 0.16), rgba(10, 14, 20, 0.92))";
+  renderFeaturedMovieMeta(featured);
+  setHeroVisual(featured);
+}
 
+function renderFeaturedMovieMeta(featured) {
   const countries = (featured.production_countries || []).map((country) => country.name).slice(0, 2);
   const genres = (featured.genres || []).map((genre) => genre.name).slice(0, 3);
 
-  elements.heroBackdrop.style.backgroundImage = backdrop;
   elements.heroTitle.textContent = featured.title;
   elements.heroOverview.textContent = featured.overview || "暂无简介。";
   elements.heroMeta.textContent = `${formatYear(featured.release_date)} · 评分 ${formatScore(featured.vote_average)} · ${countries.join(" / ") || "地区待补充"}`;
@@ -621,6 +623,51 @@ function updateFeaturedMovie(preferredId) {
     ...genres.map((genre) => `<span class="hero-tag">${escapeHtml(genre)}</span>`),
     `<span class="hero-tag">${formatRuntime(featured.runtime)}</span>`,
   ].join("");
+}
+
+async function setHeroVisual(featured) {
+  const token = ++state.heroVisualToken;
+  const candidates = buildHeroVisualCandidates(featured);
+
+  for (const url of candidates) {
+    const loaded = await preloadImage(url);
+    if (token !== state.heroVisualToken) {
+      return;
+    }
+
+    if (loaded) {
+      elements.heroBackdrop.style.backgroundImage = `linear-gradient(90deg, rgba(5, 7, 11, 0.92), rgba(5, 7, 11, 0.55) 42%, rgba(5, 7, 11, 0.82) 100%), url(${url})`;
+      return;
+    }
+  }
+}
+
+function buildHeroVisualCandidates(featured) {
+  const paths = [featured.backdrop_path, featured.poster_path].filter(Boolean);
+  const sizes = ["w780", "w500", "w342"];
+  const candidates = [];
+
+  paths.forEach((path) => {
+    sizes.forEach((size) => {
+      candidates.push(getImageUrl(path, size));
+    });
+  });
+
+  return candidates;
+}
+
+function preloadImage(url) {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve(false);
+      return;
+    }
+
+    const image = new Image();
+    image.onload = () => resolve(true);
+    image.onerror = () => resolve(false);
+    image.src = url;
+  });
 }
 
 function updateFeaturedMovieIfNeeded(filteredMovies) {
