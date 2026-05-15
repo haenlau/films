@@ -1,6 +1,5 @@
 const RESOLVED_LIBRARY_URL = "./data/library.resolved.json";
 const SOURCE_LIBRARY_URL = "./data/library.json";
-const TMDB_IMAGE_FALLBACK_BASE = "https://image.tmdb.org/t/p/";
 const MOVIE_DB_BASE_URL = "https://api.themoviedb.org/3";
 const BROWSER_REQUEST_INTERVAL_MS = 120;
 const STORAGE_KEY = "film-vault.local-draft.v3";
@@ -20,7 +19,6 @@ const state = {
   },
   activeGenre: "all",
   featuredMovieId: null,
-  heroVisualToken: 0,
   searchResults: [],
   searchQuery: "",
   searchPage: 1,
@@ -432,7 +430,7 @@ function renderLibrary() {
 
 function renderMovieCard(movie) {
   const poster = movie.poster_path
-    ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" loading="lazy" onerror="window.filmVaultImageFallback(this, '${escapeAttribute(movie.poster_path)}', 'w342')" />`
+    ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" loading="lazy" />`
     : `<div class="movie-fallback">${escapeHtml(movie.title)}</div>`;
 
   const genres = (movie.genres || []).slice(0, 2).map((genre) => genre.name).join(" / ") || "未分类";
@@ -626,15 +624,10 @@ function renderFeaturedMovieMeta(featured) {
 }
 
 async function setHeroVisual(featured) {
-  const token = ++state.heroVisualToken;
   const candidates = buildHeroVisualCandidates(featured);
 
   for (const url of candidates) {
     const loaded = await preloadImage(url);
-    if (token !== state.heroVisualToken) {
-      return;
-    }
-
     if (loaded) {
       elements.heroBackdrop.style.backgroundImage = `linear-gradient(90deg, rgba(5, 7, 11, 0.92), rgba(5, 7, 11, 0.55) 42%, rgba(5, 7, 11, 0.82) 100%), url(${url})`;
       return;
@@ -1005,7 +998,7 @@ function renderSearchResults() {
         (item) => Number(item.id) === Number(movie.id) && String(item.media_type || "movie") === String(movie.media_type || "movie")
       );
       const poster = movie.poster_path
-        ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" onerror="window.filmVaultImageFallback(this, '${escapeAttribute(movie.poster_path)}', 'w342')" />`
+        ? `<img src="${getImageUrl(movie.poster_path, "w342")}" alt="${escapeHtml(movie.title)} 海报" />`
         : `<div class="search-fallback">NO POSTER</div>`;
       const badge = exists ? `<span class="result-badge">已在片库中</span>` : "";
       const actionClass = exists ? "search-result-button remove" : "search-result-button";
@@ -1354,19 +1347,6 @@ function getImageUrl(path, size = "w780") {
   return `/img/tmdb?${search.toString()}`;
 }
 
-window.filmVaultImageFallback = function filmVaultImageFallback(image, path, size = "w342") {
-  if (!image || !path) {
-    return;
-  }
-
-  if (image.dataset.fallbackApplied === "true") {
-    return;
-  }
-
-  image.dataset.fallbackApplied = "true";
-  image.src = `${TMDB_IMAGE_FALLBACK_BASE}${size}${path}`;
-};
-
 function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.classList.add("show");
@@ -1407,11 +1387,5 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function escapeAttribute(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
     .replaceAll("'", "&#39;");
 }
